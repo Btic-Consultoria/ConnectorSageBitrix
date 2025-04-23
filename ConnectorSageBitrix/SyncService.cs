@@ -1,6 +1,5 @@
 ﻿using System;
 using System.ServiceProcess;
-using System.Timers;
 using System.Threading;
 using System.Threading.Tasks;
 using ConnectorSageBitrix.Config;
@@ -11,6 +10,8 @@ using ConnectorSageBitrix.Database;
 using ConnectorSageBitrix.Bitrix;
 using ConnectorSageBitrix.Repositories;
 using System.ComponentModel;
+using MyLicenseManager = ConnectorSageBitrix.Licensing.LicenseManager;
+using Timer = System.Timers.Timer;
 
 namespace ConnectorSageBitrix
 {
@@ -19,7 +20,7 @@ namespace ConnectorSageBitrix
         private Logger _logger;
         private AppConfig _config;
         private SyncManager _syncManager;
-        private Timer _timer;
+        private System.Timers.Timer _timer;
         private CancellationTokenSource _cancellationTokenSource;
         private DatabaseManager _databaseManager;
         private bool _isRunning = false;
@@ -209,7 +210,7 @@ namespace ConnectorSageBitrix
             }
 
             // Create license instance
-            var licenseManager = new LicenseManager(clientCode, licenseID, _logger);
+            var licenseManager = new MyLicenseManager(clientCode, licenseID, _logger);
 
             // Initial license check
             _logger.Info("Performing initial license verification (with retry logic)...");
@@ -268,15 +269,6 @@ namespace ConnectorSageBitrix
                 _logger.Error($"Error during synchronization: {ex.Message}");
                 _logger.Error(ex.ToString());
             }
-        }
-
-        // Designer-generated code
-        private void InitializeComponent()
-        {
-            // 
-            // SyncService
-            // 
-            this.ServiceName = "ConnectorSageBitrix";
         }
     }
 }

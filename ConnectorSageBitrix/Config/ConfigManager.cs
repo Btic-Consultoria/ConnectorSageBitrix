@@ -34,35 +34,35 @@ namespace ConnectorSageBitrix.Config
                     Console.WriteLine("Using encrypted configuration file");
 
                     // Set client code from encrypted config
-                    config.ClientCode = encryptedConfig.GetValue<string>("CodigoCliente");
+                    config.ClientCode = encryptedConfig["CodigoCliente"]?.Value<string>();
 
                     // Always set BitrixClientCode to the root CodigoCliente for now
                     config.BitrixClientCode = config.ClientCode;
 
                     // Set DB configuration from encrypted config
-                    var dbSection = encryptedConfig.GetValue<JObject>("DB");
+                    var dbSection = encryptedConfig["DB"] as JObject;
                     if (dbSection != null)
                     {
-                        config.DB.Host = dbSection.GetValue<string>("DB_Host_Sage");
-                        config.DB.Port = dbSection.GetValue<string>("DB_Port");
-                        config.DB.Database = dbSection.GetValue<string>("DB_Database");
-                        config.DB.User = dbSection.GetValue<string>("DB_Username");
-                        config.DB.Password = dbSection.GetValue<string>("DB_Password");
-                        config.DB.LicenseID = dbSection.GetValue<string>("IdLlicencia");
+                        config.DB.Host = dbSection["DB_Host_Sage"]?.Value<string>();
+                        config.DB.Port = dbSection["DB_Port"]?.Value<string>();
+                        config.DB.Database = dbSection["DB_Database"]?.Value<string>();
+                        config.DB.User = dbSection["DB_Username"]?.Value<string>();
+                        config.DB.Password = dbSection["DB_Password"]?.Value<string>();
+                        config.DB.LicenseID = dbSection["IdLlicencia"]?.Value<string>();
                     }
 
                     // Set Bitrix URL from encrypted config
-                    var bitrixSection = encryptedConfig.GetValue<JObject>("Bitrix24");
+                    var bitrixSection = encryptedConfig["Bitrix24"]?.Value<JObject>();
                     if (bitrixSection != null)
                     {
-                        string apiTenant = bitrixSection.GetValue<string>("API_Tenant");
+                        string apiTenant = bitrixSection["API_Tenant"]?.Value<string>();
                         if (!string.IsNullOrEmpty(apiTenant))
                         {
                             config.Bitrix.URL = apiTenant;
                         }
 
                         // Set PackEmpresa flag from encrypted config
-                        config.PackEmpresa = bitrixSection.GetValue<bool>("pack_empresa");
+                        config.PackEmpresa = bitrixSection["pack_empresa"]?.Value<bool>() ?? false;
                         Console.WriteLine($"Set PackEmpresa to {config.PackEmpresa} from encrypted config");
                     }
                 }
@@ -155,21 +155,21 @@ namespace ConnectorSageBitrix.Config
                 JObject config = JObject.Parse(jsonConfig);
 
                 // Validate basic config
-                if (config.GetValue<string>("CodigoCliente") == null)
+                if (config["CodigoCliente"]?.Value<string>() == null)
                 {
                     Console.WriteLine("Decrypted config is missing CodigoCliente");
                     return null;
                 }
 
                 // Log the pack_empresa value
-                var bitrix24 = config.GetValue<JObject>("Bitrix24");
+                var bitrix24 = config["Bitrix24"]?.Value<JObject>();
                 if (bitrix24 != null)
                 {
-                    bool packEmpresa = bitrix24.GetValue<bool>("pack_empresa");
+                    bool packEmpresa = bitrix24["pack_empresa"]?.Value<bool>() ?? false;
                     Console.WriteLine($"Decrypted config - pack_empresa: {packEmpresa}");
                 }
 
-                Console.WriteLine($"Successfully decrypted config with CodigoCliente: {config.GetValue<string>("CodigoCliente")}");
+                Console.WriteLine($"Successfully decrypted config with CodigoCliente: {config["CodigoCliente"]?.Value<string>()}");
                 return config;
             }
             catch (Exception ex)

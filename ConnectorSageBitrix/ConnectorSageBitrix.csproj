@@ -37,6 +37,8 @@
       <HintPath>..\packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Configuration.Install" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -62,7 +64,9 @@
     <Compile Include="Models\Cargo.cs" />
     <Compile Include="Models\Modelo.cs" />
     <Compile Include="Models\Socio.cs" />
-    <Compile Include="ProjectInstaller.cs" />
+    <Compile Include="ProjectInstaller.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="Repositories\ActividadRepository.cs" />
     <Compile Include="Repositories\CargoRepository.cs" />
     <Compile Include="Repositories\ModeloRepository.cs" />
