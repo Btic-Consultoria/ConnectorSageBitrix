@@ -58,8 +58,7 @@ namespace ConnectorSageBitrix.Config
         public string LicenseID { get; set; }
 
         public string ConnectionString =>
-            $"Server={Host};Database={Database};User Id={User};Password={Password};" +
-            (string.IsNullOrEmpty(Port) ? "" : $"Port={Port};");
+    $"Server={Host}\\{(Host.Contains("\\") ? "" : "SAGEEXPRESS")};Database={Database};User Id={User};Password={Password};Connection Timeout=60;TrustServerCertificate=True;";
     }
 
     public class BitrixConfig

@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.13.35931.197 d17.13
+VisualStudioVersion = 17.13.35931.197
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectorSageBitrix", "ConnectorSageBitrix\ConnectorSageBitrix.csproj", "{80045164-1C3E-4461-92C6-C0FDCE7C4DC5}"
+EndProject
+Project("{54435603-DBB4-11D2-8724-00A0C9A8B90C}") = "ConnectorSageBitrix.Setup", "ConnectorSageBitrix.Setup\ConnectorSageBitrix.Setup.vdproj", "{5A956E8F-B477-2198-9735-E07798A8F8FC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,8 @@ Global
 		{80045164-1C3E-4461-92C6-C0FDCE7C4DC5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{80045164-1C3E-4461-92C6-C0FDCE7C4DC5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{80045164-1C3E-4461-92C6-C0FDCE7C4DC5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A956E8F-B477-2198-9735-E07798A8F8FC}.Debug|Any CPU.ActiveCfg = Debug
+		{5A956E8F-B477-2198-9735-E07798A8F8FC}.Release|Any CPU.ActiveCfg = Release
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
