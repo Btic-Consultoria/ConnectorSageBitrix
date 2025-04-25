@@ -26,20 +26,26 @@ namespace ConnectorSageBitrix.Repositories
 
         public Modelo GetByCodigoModelo(string codigoModelo)
         {
+            if (string.IsNullOrEmpty(codigoModelo))
+            {
+                _logger.Info($"GetByCodigoModelo llamado con código nulo o vacío");
+                return null;
+            }
+
             string query = @"
-                SELECT 
-                    imp.CodigoModeloImp,
-                    mo.Periodicidad
-                FROM 
-                    IOF_ModelosPresentar imp
-                    LEFT JOIN ModelosOficiales mo ON imp.CodigoModeloImp = mo.CodigoModeloImp
-                WHERE 
-                    imp.CodigoModeloImp = @codigoModelo
-            ";
+        SELECT 
+            imp.CodigoModeloImp,
+            mo.Periodicidad
+        FROM 
+            IOF_ModelosPresentar imp
+            LEFT JOIN ModelosOficiales mo ON imp.CodigoModeloImp = mo.CodigoModeloImp
+        WHERE 
+            imp.CodigoModeloImp = @codigoModelo
+    ";
 
             SqlParameter[] parameters = new SqlParameter[]
             {
-                new SqlParameter("@codigoModelo", codigoModelo)
+        new SqlParameter("@codigoModelo", codigoModelo)
             };
 
             DataTable result = _db.ExecuteQuery(query, parameters);

@@ -287,6 +287,12 @@ namespace ConnectorSageBitrix.Sync
             {
                 if (cancellationToken.IsCancellationRequested) return;
 
+                if (string.IsNullOrEmpty(bitrixModelo.CodigoModeloImp))
+                {
+                    _logger.Info("Omitiendo modelo con CodigoModeloImp nulo o vacío");
+                    continue;
+                }
+
                 // Get the corresponding modelo from Sage using the codigo as key
                 Modelo sageModelo = _modeloRepository.GetByCodigoModelo(bitrixModelo.CodigoModeloImp);
                 if (sageModelo == null)

@@ -63,7 +63,7 @@ namespace ConnectorSageBitrix
 
                 // Load configuration
                 _logger.Info("Loading configuration");
-                _config = ConfigManager.Load();
+                _config = ConfigManager.Load(_logger);
                 if (_config == null)
                 {
                     _logger.Fatal("Failed to load configuration");
