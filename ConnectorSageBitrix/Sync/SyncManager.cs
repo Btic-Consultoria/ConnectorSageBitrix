@@ -279,56 +279,94 @@ namespace ConnectorSageBitrix.Sync
             List<BitrixModelo> bitrixModelos = await _bitrixClient.ListModelosAsync();
             _logger.Info($"Retrieved {bitrixModelos.Count} modelos from Bitrix24");
 
-            // Create a list to store codes of processed modelos
+            // Create a list to store codes of processed modelos and a dictionary for lookup by code
             List<string> processedCodigos = new List<string>();
+            Dictionary<string, BitrixModelo> bitrixModelosByCodigo = new Dictionary<string, BitrixModelo>(StringComparer.OrdinalIgnoreCase);
 
-            // Step 2: Update existing modelos in Bitrix24 with data from Sage
+            // Step 2: Process existing modelos from Bitrix24
             foreach (var bitrixModelo in bitrixModelos)
             {
                 if (cancellationToken.IsCancellationRequested) return;
 
-                if (string.IsNullOrEmpty(bitrixModelo.CodigoModeloImp))
+                // INICIO DE LA MODIFICACIÓN ----------------------------------------
+                string codigo = bitrixModelo.CodigoModeloImp;
+
+                // Si CodigoModeloImp está vacío, intenta extraer el código del título
+                if (string.IsNullOrEmpty(codigo) && !string.IsNullOrEmpty(bitrixModelo.Title))
                 {
-                    _logger.Info("Omitiendo modelo con CodigoModeloImp nulo o vacío");
+                    // El título tiene formato "Modelo XXX"
+                    string title = bitrixModelo.Title;
+                    if (title.StartsWith("Modelo "))
+                    {
+                        codigo = title.Substring("Modelo ".Length).Trim();
+                        _logger.Info($"Extracted codigo '{codigo}' from title '{title}'");
+                    }
+                }
+
+                if (string.IsNullOrEmpty(codigo))
+                {
+                    _logger.Info("Omitiendo modelo con CodigoModeloImp nulo o vacío y título sin código");
                     continue;
                 }
 
+                // Normalize codigo (trim and convert to consistent case)
+                string normalizedCodigo = codigo.Trim();
+                // FIN DE LA MODIFICACIÓN ------------------------------------------
+
+                // Add to processed list and lookup dictionary
+                processedCodigos.Add(normalizedCodigo);
+                bitrixModelosByCodigo[normalizedCodigo] = bitrixModelo;
+
                 // Get the corresponding modelo from Sage using the codigo as key
-                Modelo sageModelo = _modeloRepository.GetByCodigoModelo(bitrixModelo.CodigoModeloImp);
+                Modelo sageModelo = _modeloRepository.GetByCodigoModelo(normalizedCodigo);
                 if (sageModelo == null)
                 {
-                    _logger.Info($"Modelo with codigo {bitrixModelo.CodigoModeloImp} not found in Sage");
+                    _logger.Info($"Modelo with codigo {normalizedCodigo} not found in Sage");
                     continue;
                 }
 
                 // If the modelo exists in Sage and needs to be updated in Bitrix24
                 if (BitrixModelo.NeedsModeloUpdate(bitrixModelo, sageModelo))
                 {
-                    _logger.Info($"Updating modelo with codigo {bitrixModelo.CodigoModeloImp} in Bitrix24");
+                    _logger.Info($"Updating modelo with codigo {normalizedCodigo} in Bitrix24");
                     BitrixModelo updatedBitrixModelo = BitrixModelo.FromSageModelo(sageModelo);
                     await _bitrixClient.UpdateModeloAsync(bitrixModelo.ID, updatedBitrixModelo);
                 }
-
-                // Add this codigo to the processed list, regardless of whether it was updated
-                processedCodigos.Add(bitrixModelo.CodigoModeloImp);
             }
 
             // Step 3: Get modelos from Sage that don't exist in Bitrix24
             List<Modelo> sageModelos = _modeloRepository.GetAllExcept(processedCodigos);
-            _logger.Info($"Found {sageModelos.Count} new modelos in Sage to create in Bitrix24");
 
-            // Step 4: Create new modelos in Bitrix24
+            // Create filtered list to prevent duplicates
+            List<Modelo> newModelosToCreate = new List<Modelo>();
             foreach (var sageModelo in sageModelos)
             {
-                if (cancellationToken.IsCancellationRequested) return;
-
                 // Skip empty modelos
                 if (string.IsNullOrEmpty(sageModelo.CodigoModeloImp))
+                    continue;
+
+                string normalizedCodigo = sageModelo.CodigoModeloImp.Trim();
+
+                // Skip if the model already exists in Bitrix (using case-insensitive comparison)
+                if (bitrixModelosByCodigo.ContainsKey(normalizedCodigo))
                 {
+                    _logger.Debug($"Modelo with codigo {normalizedCodigo} already exists in Bitrix24, skipping creation");
                     continue;
                 }
 
-                _logger.Info($"Creating new modelo with codigo {sageModelo.CodigoModeloImp} in Bitrix24");
+                // Add to list of models to create
+                newModelosToCreate.Add(sageModelo);
+            }
+
+            _logger.Info($"Found {newModelosToCreate.Count} new modelos in Sage to create in Bitrix24");
+
+            // Step 4: Create new modelos in Bitrix24
+            foreach (var sageModelo in newModelosToCreate)
+            {
+                if (cancellationToken.IsCancellationRequested) return;
+
+                string normalizedCodigo = sageModelo.CodigoModeloImp.Trim();
+                _logger.Info($"Creating new modelo with codigo {normalizedCodigo} in Bitrix24");
                 BitrixModelo newBitrixModelo = BitrixModelo.FromSageModelo(sageModelo);
                 await _bitrixClient.CreateModeloAsync(newBitrixModelo);
             }

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using System.Linq;
 using ConnectorSageBitrix.Database;
 using ConnectorSageBitrix.Logging;
 using ConnectorSageBitrix.Models;
@@ -45,7 +46,7 @@ namespace ConnectorSageBitrix.Repositories
 
             SqlParameter[] parameters = new SqlParameter[]
             {
-        new SqlParameter("@codigoModelo", codigoModelo)
+                new SqlParameter("@codigoModelo", codigoModelo)
             };
 
             DataTable result = _db.ExecuteQuery(query, parameters);
@@ -94,12 +95,27 @@ namespace ConnectorSageBitrix.Repositories
             ";
 
             DataTable result = _db.ExecuteQuery(query, parameters);
-            List<Modelo> modelos = new List<Modelo>();
+            Dictionary<string, Modelo> uniqueModelos = new Dictionary<string, Modelo>();
 
             foreach (DataRow row in result.Rows)
             {
-                modelos.Add(MapRowToModelo(row));
+                Modelo modelo = MapRowToModelo(row);
+                string codigoModeloImp = modelo.CodigoModeloImp?.Trim() ?? "";
+
+                // Solo añadir modelos únicos basados en el código
+                if (!string.IsNullOrEmpty(codigoModeloImp) && !uniqueModelos.ContainsKey(codigoModeloImp))
+                {
+                    uniqueModelos.Add(codigoModeloImp, modelo);
+                    _logger.Debug($"Añadido modelo único: {codigoModeloImp}");
+                }
+                else if (!string.IsNullOrEmpty(codigoModeloImp))
+                {
+                    _logger.Debug($"Modelo duplicado ignorado: {codigoModeloImp}");
+                }
             }
+
+            List<Modelo> modelos = uniqueModelos.Values.ToList();
+            _logger.Info($"Recuperados {modelos.Count} modelos únicos de {result.Rows.Count} filas totales");
 
             return modelos;
         }
@@ -108,14 +124,14 @@ namespace ConnectorSageBitrix.Repositories
         {
             Modelo modelo = new Modelo
             {
-                CodigoModeloImp = row["CodigoModeloImp"].ToString(),
+                CodigoModeloImp = row["CodigoModeloImp"]?.ToString()?.Trim(),
                 Estado = "Desconocido" // Default value
             };
 
             // Handle potential NULL values
             if (row["Periodicidad"] != DBNull.Value)
             {
-                modelo.Periodicidad = row["Periodicidad"].ToString();
+                modelo.Periodicidad = row["Periodicidad"].ToString()?.Trim();
             }
 
             return modelo;
