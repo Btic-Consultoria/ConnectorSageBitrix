@@ -24,10 +24,11 @@ namespace ConnectorSageBitrix.Repositories
             return GetWithFilter("");
         }
 
-        public Actividad GetByEpigrafe(string epigrafe)
+        public Actividad GetByGuid(string guidActividad)
         {
             string query = @"
                 SELECT 
+                    a.GuidActividad,
                     a.Principal,
                     a.SufijoCNAE,
                     a.GrupoCNAE,
@@ -35,10 +36,50 @@ namespace ConnectorSageBitrix.Repositories
                     a.BajaIAE,
                     a.AltaIAE,
                     a.CenaeEpigrafe,
+                    a.TipoEpigrafe,
                     ei.Epigrafe
                 FROM 
                     Actividades a
                     LEFT JOIN EpigrafesIAE ei ON a.CodigoEpigrafe = ei.CodigoEpigrafe
+                    AND a.TipoEpigrafe = ei.TipoEpigrafe
+                WHERE 
+                    a.GuidActividad = @guidActividad
+            ";
+
+            SqlParameter[] parameters = new SqlParameter[]
+            {
+                new SqlParameter("@guidActividad", guidActividad)
+            };
+
+            DataTable result = _db.ExecuteQuery(query, parameters);
+
+            if (result.Rows.Count == 0)
+            {
+                return null;
+            }
+
+            DataRow row = result.Rows[0];
+            return MapRowToActividad(row);
+        }
+
+        public Actividad GetByEpigrafe(string epigrafe)
+        {
+            string query = @"
+                SELECT 
+                    a.GuidActividad,
+                    a.Principal,
+                    a.SufijoCNAE,
+                    a.GrupoCNAE,
+                    a.CodigoEpigrafe,
+                    a.BajaIAE,
+                    a.AltaIAE,
+                    a.CenaeEpigrafe,
+                    a.TipoEpigrafe,
+                    ei.Epigrafe
+                FROM 
+                    Actividades a
+                    LEFT JOIN EpigrafesIAE ei ON a.CodigoEpigrafe = ei.CodigoEpigrafe
+                    AND a.TipoEpigrafe = ei.TipoEpigrafe
                 WHERE 
                     a.CodigoEpigrafe = @epigrafe
             ";
@@ -59,9 +100,9 @@ namespace ConnectorSageBitrix.Repositories
             return MapRowToActividad(row);
         }
 
-        public List<Actividad> GetAllExcept(List<string> epigrafeList)
+        public List<Actividad> GetAllExcept(List<string> guidList)
         {
-            if (epigrafeList == null || epigrafeList.Count == 0)
+            if (guidList == null || guidList.Count == 0)
             {
                 return GetAll();
             }
@@ -70,14 +111,14 @@ namespace ConnectorSageBitrix.Repositories
             List<SqlParameter> parameters = new List<SqlParameter>();
             List<string> paramPlaceholders = new List<string>();
 
-            for (int i = 0; i < epigrafeList.Count; i++)
+            for (int i = 0; i < guidList.Count; i++)
             {
                 string paramName = $"@p{i}";
                 paramPlaceholders.Add(paramName);
-                parameters.Add(new SqlParameter(paramName, epigrafeList[i]));
+                parameters.Add(new SqlParameter(paramName, guidList[i]));
             }
 
-            string filter = $"WHERE a.CodigoEpigrafe NOT IN ({string.Join(", ", paramPlaceholders)})";
+            string filter = $"WHERE a.GuidActividad NOT IN ({string.Join(", ", paramPlaceholders)})";
             return GetWithFilter(filter, parameters.ToArray());
         }
 
@@ -85,6 +126,7 @@ namespace ConnectorSageBitrix.Repositories
         {
             string query = $@"
                 SELECT 
+                    a.GuidActividad,
                     a.Principal,
                     a.SufijoCNAE,
                     a.GrupoCNAE,
@@ -92,10 +134,12 @@ namespace ConnectorSageBitrix.Repositories
                     a.BajaIAE,
                     a.AltaIAE,
                     a.CenaeEpigrafe,
+                    a.TipoEpigrafe,
                     ei.Epigrafe
                 FROM 
                     Actividades a
                     LEFT JOIN EpigrafesIAE ei ON a.CodigoEpigrafe = ei.CodigoEpigrafe
+                    AND a.TipoEpigrafe = ei.TipoEpigrafe
                 {filter}
             ";
 
@@ -114,11 +158,13 @@ namespace ConnectorSageBitrix.Repositories
         {
             Actividad actividad = new Actividad
             {
+                GuidActividad = row["GuidActividad"].ToString(),
                 Principal = Convert.ToBoolean(row["Principal"]),
                 SufijoCNAE = row["SufijoCNAE"].ToString(),
                 GrupoCNAE = row["GrupoCNAE"].ToString(),
                 CodigoEpigrafe = row["CodigoEpigrafe"].ToString(),
-                CenaeEpigrafe = row["CenaeEpigrafe"].ToString()
+                CenaeEpigrafe = row["CenaeEpigrafe"].ToString(),
+                TipoEpigrafe = row["TipoEpigrafe"].ToString()
             };
 
             // Handle potential NULL values

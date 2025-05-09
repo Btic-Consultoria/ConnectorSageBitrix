@@ -9,6 +9,6 @@ namespace ConnectorSageBitrix.Models
         public bool Administrador { get; set; }
         public string CargoAdministrador { get; set; }
         public string DNI { get; set; }
-        public string NombreEmpleado { get; set; }
+        public string RazonSocialEmpleado { get; set; }
     }
 }

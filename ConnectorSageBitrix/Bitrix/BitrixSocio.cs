@@ -37,6 +37,9 @@ namespace ConnectorSageBitrix.Bitrix
         [JsonProperty("ufCrm55Participacion")]
         public string Participacion { get; set; }
 
+        [JsonProperty("ufCrm55RazonSocial")]
+        public string RazonSocialEmpleado { get; set; } // Nuevo campo para RazonSocialEmpleado
+
         // Convert to Sage model
         public Socio ToSageSocio()
         {
@@ -48,7 +51,8 @@ namespace ConnectorSageBitrix.Bitrix
                 DNI = DNI,
                 PorParticipacion = participacion,
                 Administrador = Administrador == "Y",
-                CargoAdministrador = Cargo
+                CargoAdministrador = Cargo,
+                RazonSocialEmpleado = RazonSocialEmpleado // Mapeo del nuevo campo
             };
         }
 
@@ -66,11 +70,12 @@ namespace ConnectorSageBitrix.Bitrix
 
             return new BitrixSocio
             {
-                Title = socio.DNI,
+                Title = !string.IsNullOrEmpty(socio.RazonSocialEmpleado) ? socio.RazonSocialEmpleado : socio.DNI, // Usar RazonSocialEmpleado como título si está disponible
                 DNI = socio.DNI,
                 Cargo = cargo,
                 Administrador = administrador,
-                Participacion = socio.PorParticipacion.ToString("F2")
+                Participacion = socio.PorParticipacion.ToString("F2"),
+                RazonSocialEmpleado = socio.RazonSocialEmpleado // Mapeo del nuevo campo
             };
         }
 
@@ -98,6 +103,12 @@ namespace ConnectorSageBitrix.Bitrix
             }
 
             if (bitrixSocio.DNI != sageSocio.DNI)
+            {
+                return true;
+            }
+
+            // Comprobar si el campo RazonSocialEmpleado ha cambiado
+            if (bitrixSocio.RazonSocialEmpleado != sageSocio.RazonSocialEmpleado)
             {
                 return true;
             }

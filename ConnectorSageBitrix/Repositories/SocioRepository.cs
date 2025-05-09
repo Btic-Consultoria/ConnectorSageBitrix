@@ -33,7 +33,7 @@ namespace ConnectorSageBitrix.Repositories
                     cfh.Administrador,
                     cfh.CargoAdministrador,
                     p.Dni,
-                    p.NombreEmpleado 
+                    p.RazonSocialEmpleado 
                 FROM 
                     Personas p
                     INNER JOIN SociosHistorico sh ON p.GuidPersona = sh.GuidPersona
@@ -89,7 +89,7 @@ namespace ConnectorSageBitrix.Repositories
                     cfh.Administrador,
                     cfh.CargoAdministrador,
                     p.Dni,
-                    p.NombreEmpleado 
+                    p.RazonSocialEmpleado 
                 FROM 
                     Personas p
                     INNER JOIN SociosHistorico sh ON p.GuidPersona = sh.GuidPersona
@@ -115,14 +115,19 @@ namespace ConnectorSageBitrix.Repositories
                 CodigoEmpresa = Convert.ToInt32(row["CodigoEmpresa"]),
                 PorParticipacion = Convert.ToDouble(row["PorParticipacion"]),
                 Administrador = Convert.ToBoolean(row["Administrador"]),
-                DNI = row["Dni"].ToString(),
-                NombreEmpleado = row["NombreEmpleado"].ToString()
+                DNI = row["Dni"].ToString()
             };
 
             // Handle potential NULL values
             if (row["CargoAdministrador"] != DBNull.Value)
             {
                 socio.CargoAdministrador = row["CargoAdministrador"].ToString();
+            }
+
+            // Manejar el campo RazonSocialEmpleado
+            if (row["RazonSocialEmpleado"] != DBNull.Value)
+            {
+                socio.RazonSocialEmpleado = row["RazonSocialEmpleado"].ToString();
             }
 
             return socio;

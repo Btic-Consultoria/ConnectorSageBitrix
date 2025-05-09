@@ -54,11 +54,12 @@ namespace ConnectorSageBitrix.Bitrix
             {
                 fields = new
                 {
-                    title = socio.DNI,
+                    title = socio.Title,
                     ufCrm55Dni = socio.DNI,
                     ufCrm55Cargo = socio.Cargo,
                     ufCrm55Admin = socio.Administrador,
-                    ufCrm55Participacion = socio.Participacion
+                    ufCrm55Participacion = socio.Participacion,
+                    ufCrm55RazonSocial = socio.RazonSocialEmpleado // Nuevo campo
                 },
                 entityTypeId = BitrixConstants.EntityTypeSocios
             };
@@ -80,11 +81,12 @@ namespace ConnectorSageBitrix.Bitrix
                 id = id,
                 fields = new
                 {
-                    title = socio.DNI,
+                    title = socio.Title,
                     ufCrm55Dni = socio.DNI,
                     ufCrm55Cargo = socio.Cargo,
                     ufCrm55Admin = socio.Administrador,
-                    ufCrm55Participacion = socio.Participacion
+                    ufCrm55Participacion = socio.Participacion,
+                    ufCrm55RazonSocial = socio.RazonSocialEmpleado
                 },
                 entityTypeId = BitrixConstants.EntityTypeSocios
             };
@@ -126,16 +128,17 @@ namespace ConnectorSageBitrix.Bitrix
             {
                 fields = new
                 {
-                    title = cargo.DNI,
-                    ufCrm57Dni = cargo.DNI,
+                    title = cargo.Title,
+                    ufCrm57GuidPersona = cargo.GuidPersona,
                     ufCrm57Cargo = cargo.Cargo,
                     ufCrm57Unico = cargo.SocioUnico,
-                    ufCrm57Caducidad = cargo.Caducidad
+                    ufCrm57Caducidad = cargo.Caducidad,
+                    ufCrm57RazonSocial = cargo.RazonSocialEmpleado
                 },
                 entityTypeId = BitrixConstants.EntityTypeCargos
             };
 
-            _logger.Debug($"Creating cargo with DNI: {cargo.DNI}");
+            _logger.Debug($"Creating cargo with GuidPersona: {cargo.GuidPersona}");
 
             var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
 
@@ -152,11 +155,12 @@ namespace ConnectorSageBitrix.Bitrix
                 id = id,
                 fields = new
                 {
-                    title = cargo.DNI,
-                    ufCrm57Dni = cargo.DNI,
+                    title = cargo.Title,
+                    ufCrm57GuidPersona = cargo.GuidPersona,
                     ufCrm57Cargo = cargo.Cargo,
                     ufCrm57Unico = cargo.SocioUnico,
-                    ufCrm57Caducidad = cargo.Caducidad
+                    ufCrm57Caducidad = cargo.Caducidad,
+                    ufCrm57RazonSocial = cargo.RazonSocialEmpleado
                 },
                 entityTypeId = BitrixConstants.EntityTypeCargos
             };
@@ -199,6 +203,7 @@ namespace ConnectorSageBitrix.Bitrix
                 fields = new
                 {
                     title = actividad.Title,
+                    ufCrm59GuidActividad = actividad.GuidActividad,
                     ufCrm59Descripcion = actividad.Descripcion,
                     ufCrm_59_CNAE_93 = actividad.CNAE93,
                     ufCrm59AltaIae = actividad.AltaIAE,
@@ -206,12 +211,13 @@ namespace ConnectorSageBitrix.Bitrix
                     ufCrm59Epigrafe = actividad.Epigrafe,
                     ufCrm_59_CNAE_09 = actividad.CNAE09,
                     ufCrm59Sufijo = actividad.Sufijo,
-                    ufCrm59Principal = actividad.Principal
+                    ufCrm59Principal = actividad.Principal,
+                    ufCrm59TipoEpigrafe = actividad.TipoEpigrafe
                 },
                 entityTypeId = BitrixConstants.EntityTypeActividades
             };
 
-            _logger.Debug($"Creating actividad with epigrafe: {actividad.Epigrafe}");
+            _logger.Debug($"Creating actividad with GuidActividad: {actividad.GuidActividad}");
 
             var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
 
@@ -229,6 +235,7 @@ namespace ConnectorSageBitrix.Bitrix
                 fields = new
                 {
                     title = actividad.Title,
+                    ufCrm59GuidActividad = actividad.GuidActividad,
                     ufCrm59Descripcion = actividad.Descripcion,
                     ufCrm_59_CNAE_93 = actividad.CNAE93,
                     ufCrm59AltaIae = actividad.AltaIAE,
@@ -236,7 +243,8 @@ namespace ConnectorSageBitrix.Bitrix
                     ufCrm59Epigrafe = actividad.Epigrafe,
                     ufCrm_59_CNAE_09 = actividad.CNAE09,
                     ufCrm59Sufijo = actividad.Sufijo,
-                    ufCrm59Principal = actividad.Principal
+                    ufCrm59Principal = actividad.Principal,
+                    ufCrm59TipoEpigrafe = actividad.TipoEpigrafe
                 },
                 entityTypeId = BitrixConstants.EntityTypeActividades
             };

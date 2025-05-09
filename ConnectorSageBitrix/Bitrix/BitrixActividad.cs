@@ -25,6 +25,9 @@ namespace ConnectorSageBitrix.Bitrix
         public int? EntityTypeID { get; set; }
 
         // Custom fields for Actividades
+        [JsonProperty("ufCrm59GuidActividad")]
+        public string GuidActividad { get; set; }
+
         [JsonProperty("ufCrm59Descripcion")]
         public string Descripcion { get; set; }
 
@@ -48,6 +51,9 @@ namespace ConnectorSageBitrix.Bitrix
 
         [JsonProperty("ufCrm59Principal")]
         public string Principal { get; set; }
+
+        [JsonProperty("ufCrm59TipoEpigrafe")]
+        public string TipoEpigrafe { get; set; }
 
         // Convert to Sage model
         public Actividad ToSageActividad()
@@ -75,6 +81,7 @@ namespace ConnectorSageBitrix.Bitrix
 
             return new Actividad
             {
+                GuidActividad = GuidActividad,
                 Principal = Principal == "Y",
                 SufijoCNAE = Sufijo,
                 GrupoCNAE = CNAE09,
@@ -82,7 +89,8 @@ namespace ConnectorSageBitrix.Bitrix
                 BajaIAE = bajaIAE,
                 AltaIAE = altaIAE,
                 CenaeEpigrafe = CNAE93,
-                Epigrafe = Descripcion
+                Epigrafe = Descripcion,
+                TipoEpigrafe = TipoEpigrafe
             };
         }
 
@@ -107,6 +115,7 @@ namespace ConnectorSageBitrix.Bitrix
 
             return new BitrixActividad
             {
+                GuidActividad = actividad.GuidActividad,
                 Title = title,
                 Descripcion = actividad.Epigrafe,
                 CNAE93 = actividad.CenaeEpigrafe,
@@ -115,7 +124,8 @@ namespace ConnectorSageBitrix.Bitrix
                 Epigrafe = actividad.CodigoEpigrafe,
                 CNAE09 = actividad.GrupoCNAE,
                 Sufijo = actividad.SufijoCNAE,
-                Principal = principal
+                Principal = principal,
+                TipoEpigrafe = actividad.TipoEpigrafe
             };
         }
 
@@ -151,6 +161,11 @@ namespace ConnectorSageBitrix.Bitrix
             }
 
             if (bitrixActividad.CNAE93 != sageActividad.CenaeEpigrafe)
+            {
+                return true;
+            }
+
+            if (bitrixActividad.TipoEpigrafe != sageActividad.TipoEpigrafe)
             {
                 return true;
             }

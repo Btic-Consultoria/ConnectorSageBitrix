@@ -24,26 +24,26 @@ namespace ConnectorSageBitrix.Repositories
             return GetWithFilter("");
         }
 
-        public Cargo GetByDNI(string dni)
+        public Cargo GetByGuidPersona(string guidPersona)
         {
             string query = @"
-                SELECT 
+                SELECT
+                    cfh.GuidPersona,
                     cfh.CodigoEmpresa,
-                    p.GuidPersona,
-                    p.Dni,
                     cfh.CargoFechaHasta,
                     cfh.CargoAdministrador,
-                    cfh.SocioUnico
-                FROM 
-                    Personas p
-                    LEFT JOIN CargosFiscalHistorico cfh ON p.GuidPersona = cfh.GuidPersona
+                    cfh.SocioUnico,
+                    p.RazonSocialEmpleado
+                FROM
+                    CargosFiscalHistorico cfh
+                    INNER JOIN Personas p ON cfh.GuidPersona = p.GuidPersona
                 WHERE 
-                    p.Dni = @dni
+                    cfh.GuidPersona = @guidPersona
             ";
 
             SqlParameter[] parameters = new SqlParameter[]
             {
-                new SqlParameter("@dni", dni)
+                new SqlParameter("@guidPersona", guidPersona)
             };
 
             DataTable result = _db.ExecuteQuery(query, parameters);
@@ -57,9 +57,9 @@ namespace ConnectorSageBitrix.Repositories
             return MapRowToCargo(row);
         }
 
-        public List<Cargo> GetAllExcept(List<string> dniList)
+        public List<Cargo> GetAllExcept(List<string> guidPersonaList)
         {
-            if (dniList == null || dniList.Count == 0)
+            if (guidPersonaList == null || guidPersonaList.Count == 0)
             {
                 return GetAll();
             }
@@ -68,28 +68,28 @@ namespace ConnectorSageBitrix.Repositories
             List<SqlParameter> parameters = new List<SqlParameter>();
             List<string> paramPlaceholders = new List<string>();
 
-            for (int i = 0; i < dniList.Count; i++)
+            for (int i = 0; i < guidPersonaList.Count; i++)
             {
                 string paramName = $"@p{i}";
                 paramPlaceholders.Add(paramName);
-                parameters.Add(new SqlParameter(paramName, dniList[i]));
+                parameters.Add(new SqlParameter(paramName, guidPersonaList[i]));
             }
 
-            string filter = $"WHERE p.DNI NOT IN ({string.Join(", ", paramPlaceholders)})";
+            string filter = $"WHERE cfh.GuidPersona NOT IN ({string.Join(", ", paramPlaceholders)})";
             return GetWithFilter(filter, parameters.ToArray());
         }
 
         private List<Cargo> GetWithFilter(string filter, params SqlParameter[] parameters)
         {
             string query = $@"
-                SELECT 
+                SELECT
+                    cfh.GuidPersona,
                     cfh.CodigoEmpresa,
-                    p.GuidPersona,
-                    p.Dni,
                     cfh.CargoFechaHasta,
                     cfh.CargoAdministrador,
-                    cfh.SocioUnico
-                FROM 
+                    cfh.SocioUnico,
+                    p.RazonSocialEmpleado
+                FROM
                     CargosFiscalHistorico cfh
                     INNER JOIN Personas p ON cfh.GuidPersona = p.GuidPersona
                 {filter}
@@ -111,7 +111,6 @@ namespace ConnectorSageBitrix.Repositories
             Cargo cargo = new Cargo
             {
                 GuidPersona = row["GuidPersona"].ToString(),
-                DNI = row["Dni"].ToString(),
                 SocioUnico = Convert.ToBoolean(row["SocioUnico"])
             };
 
@@ -129,6 +128,11 @@ namespace ConnectorSageBitrix.Repositories
             if (row["CargoAdministrador"] != DBNull.Value)
             {
                 cargo.CargoAdministrador = row["CargoAdministrador"].ToString();
+            }
+
+            if (row["RazonSocialEmpleado"] != DBNull.Value)
+            {
+                cargo.RazonSocialEmpleado = row["RazonSocialEmpleado"].ToString();
             }
 
             return cargo;

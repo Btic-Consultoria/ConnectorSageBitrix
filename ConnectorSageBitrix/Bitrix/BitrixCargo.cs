@@ -25,8 +25,8 @@ namespace ConnectorSageBitrix.Bitrix
         public int? EntityTypeID { get; set; }
 
         // Custom fields for Cargos
-        [JsonProperty("ufCrm57Dni")]
-        public string DNI { get; set; }
+        [JsonProperty("ufCrm57GuidPersona")]
+        public string GuidPersona { get; set; } // Nueva propiedad para usar como identificador único
 
         [JsonProperty("ufCrm57Cargo")]
         public string Cargo { get; set; }
@@ -36,6 +36,9 @@ namespace ConnectorSageBitrix.Bitrix
 
         [JsonProperty("ufCrm57Caducidad")]
         public string Caducidad { get; set; }
+
+        [JsonProperty("ufCrm57RazonSocial")]
+        public string RazonSocialEmpleado { get; set; } // Nuevo campo
 
         // Convert to Sage model
         public Cargo ToSageCargo()
@@ -52,10 +55,11 @@ namespace ConnectorSageBitrix.Bitrix
 
             return new Cargo
             {
-                DNI = DNI,
+                GuidPersona = GuidPersona,
                 CargoAdministrador = Cargo,
                 SocioUnico = SocioUnico == "Y",
-                CargoFechaHasta = cargoFechaHasta
+                CargoFechaHasta = cargoFechaHasta,
+                RazonSocialEmpleado = RazonSocialEmpleado
             };
         }
 
@@ -68,7 +72,7 @@ namespace ConnectorSageBitrix.Bitrix
             string cargoAdministrador = cargo.CargoAdministrador;
             if (string.IsNullOrEmpty(cargoAdministrador))
             {
-                cargoAdministrador = "No especificat";
+                cargoAdministrador = "No especificado";
             }
 
             // Format caducidad date
@@ -76,13 +80,19 @@ namespace ConnectorSageBitrix.Bitrix
                 ? cargo.CargoFechaHasta.Value.ToString("yyyy-MM-ddTHH:mm:sszzz")
                 : null;
 
+            // Use razón social for title if available, otherwise use "Cargo [GuidPersona]"
+            string title = !string.IsNullOrEmpty(cargo.RazonSocialEmpleado)
+                ? cargo.RazonSocialEmpleado
+                : $"Cargo {cargo.GuidPersona?.Substring(0, 8)}";
+
             return new BitrixCargo
             {
-                Title = cargo.DNI,
-                DNI = cargo.DNI,
+                Title = title,
+                GuidPersona = cargo.GuidPersona,
                 Cargo = cargoAdministrador,
                 SocioUnico = socioUnico,
-                Caducidad = caducidad
+                Caducidad = caducidad,
+                RazonSocialEmpleado = cargo.RazonSocialEmpleado
             };
         }
 
@@ -107,12 +117,13 @@ namespace ConnectorSageBitrix.Bitrix
 
             // Compare with bitrix value
             if (bitrixCargo.Cargo != cargoAdministrador &&
-                !(bitrixCargo.Cargo == "No especificat" && string.IsNullOrEmpty(cargoAdministrador)))
+                !(bitrixCargo.Cargo == "No especificado" && string.IsNullOrEmpty(cargoAdministrador)))
             {
                 return true;
             }
 
-            if (bitrixCargo.DNI != sageCargo.DNI)
+            // Comprobar si el campo RazonSocialEmpleado ha cambiado
+            if (bitrixCargo.RazonSocialEmpleado != sageCargo.RazonSocialEmpleado)
             {
                 return true;
             }
