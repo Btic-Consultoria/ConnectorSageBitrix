@@ -85,6 +85,7 @@ namespace ConnectorSageBitrix.Repositories
                 SELECT
                     cfh.GuidPersona,
                     cfh.CodigoEmpresa,
+                    p.Dni,
                     cfh.CargoFechaHasta,
                     cfh.CargoAdministrador,
                     cfh.SocioUnico,
@@ -111,6 +112,7 @@ namespace ConnectorSageBitrix.Repositories
             Cargo cargo = new Cargo
             {
                 GuidPersona = row["GuidPersona"].ToString(),
+                DNI = row["Dni"].ToString(),
                 SocioUnico = Convert.ToBoolean(row["SocioUnico"])
             };
 

@@ -129,7 +129,7 @@ namespace ConnectorSageBitrix.Bitrix
                 fields = new
                 {
                     title = cargo.Title,
-                    ufCrm57GuidPersona = cargo.GuidPersona,
+                    ufCrm57Dni = cargo.DNI, // Usar DNI en lugar de GuidPersona
                     ufCrm57Cargo = cargo.Cargo,
                     ufCrm57Unico = cargo.SocioUnico,
                     ufCrm57Caducidad = cargo.Caducidad,
@@ -138,7 +138,7 @@ namespace ConnectorSageBitrix.Bitrix
                 entityTypeId = BitrixConstants.EntityTypeCargos
             };
 
-            _logger.Debug($"Creating cargo with GuidPersona: {cargo.GuidPersona}");
+            _logger.Debug($"Creating cargo with DNI: {cargo.DNI}");
 
             var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
 
@@ -156,7 +156,7 @@ namespace ConnectorSageBitrix.Bitrix
                 fields = new
                 {
                     title = cargo.Title,
-                    ufCrm57GuidPersona = cargo.GuidPersona,
+                    ufCrm57Dni = cargo.DNI, // Usar DNI en lugar de GuidPersona
                     ufCrm57Cargo = cargo.Cargo,
                     ufCrm57Unico = cargo.SocioUnico,
                     ufCrm57Caducidad = cargo.Caducidad,

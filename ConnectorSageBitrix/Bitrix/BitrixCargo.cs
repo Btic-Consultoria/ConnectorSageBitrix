@@ -25,8 +25,8 @@ namespace ConnectorSageBitrix.Bitrix
         public int? EntityTypeID { get; set; }
 
         // Custom fields for Cargos
-        [JsonProperty("ufCrm57GuidPersona")]
-        public string GuidPersona { get; set; } // Nueva propiedad para usar como identificador único
+        [JsonProperty("ufCrm57Dni")]
+        public string DNI { get; set; }
 
         [JsonProperty("ufCrm57Cargo")]
         public string Cargo { get; set; }
@@ -38,7 +38,7 @@ namespace ConnectorSageBitrix.Bitrix
         public string Caducidad { get; set; }
 
         [JsonProperty("ufCrm57RazonSocial")]
-        public string RazonSocialEmpleado { get; set; } // Nuevo campo
+        public string RazonSocialEmpleado { get; set; }
 
         // Convert to Sage model
         public Cargo ToSageCargo()
@@ -55,7 +55,7 @@ namespace ConnectorSageBitrix.Bitrix
 
             return new Cargo
             {
-                GuidPersona = GuidPersona,
+                DNI = DNI, // Usar DNI en lugar de GuidPersona
                 CargoAdministrador = Cargo,
                 SocioUnico = SocioUnico == "Y",
                 CargoFechaHasta = cargoFechaHasta,
@@ -80,15 +80,15 @@ namespace ConnectorSageBitrix.Bitrix
                 ? cargo.CargoFechaHasta.Value.ToString("yyyy-MM-ddTHH:mm:sszzz")
                 : null;
 
-            // Use razón social for title if available, otherwise use "Cargo [GuidPersona]"
+            // Use razón social for title if available, otherwise use DNI
             string title = !string.IsNullOrEmpty(cargo.RazonSocialEmpleado)
                 ? cargo.RazonSocialEmpleado
-                : $"Cargo {cargo.GuidPersona?.Substring(0, 8)}";
+                : cargo.DNI; // Usar DNI en lugar de GuidPersona
 
             return new BitrixCargo
             {
                 Title = title,
-                GuidPersona = cargo.GuidPersona,
+                DNI = cargo.DNI, // Agregar el DNI
                 Cargo = cargoAdministrador,
                 SocioUnico = socioUnico,
                 Caducidad = caducidad,
@@ -108,6 +108,12 @@ namespace ConnectorSageBitrix.Bitrix
 
             // Check if any fields are different
             if (socioUnicoBitrix != sageCargo.SocioUnico)
+            {
+                return true;
+            }
+
+            // Verificar si el DNI ha cambiado
+            if (bitrixCargo.DNI != sageCargo.DNI)
             {
                 return true;
             }

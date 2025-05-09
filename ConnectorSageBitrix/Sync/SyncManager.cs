@@ -149,67 +149,121 @@ namespace ConnectorSageBitrix.Sync
         {
             _logger.Info("Starting Cargos synchronization");
 
-            // Step 1: Get all cargos from Bitrix24
-            List<BitrixCargo> bitrixCargos = await _bitrixClient.ListCargosAsync();
-            _logger.Info($"Retrieved {bitrixCargos.Count} cargos from Bitrix24");
-
-            // Create a list to store GUIDPersona of processed cargos
-            List<string> processedGuids = new List<string>();
-
-            // Step 2: Update existing cargos in Bitrix24 with data from Sage
-            foreach (var bitrixCargo in bitrixCargos)
+            try
             {
-                if (cancellationToken.IsCancellationRequested) return;
+                // Step 1: Get all cargos from Bitrix24
+                List<BitrixCargo> bitrixCargos = await _bitrixClient.ListCargosAsync();
+                _logger.Info($"Retrieved {bitrixCargos.Count} cargos from Bitrix24");
 
-                // Skip if GuidPersona is empty
-                if (string.IsNullOrEmpty(bitrixCargo.GuidPersona))
+                // Create a dictionary to store Bitrix cargos by DNI for efficient lookup
+                Dictionary<string, BitrixCargo> bitrixCargosByDni = new Dictionary<string, BitrixCargo>(StringComparer.OrdinalIgnoreCase);
+
+                // Log existing cargos for debugging
+                _logger.Debug("Existing cargos in Bitrix24:");
+                foreach (var bitrixCargo in bitrixCargos)
                 {
-                    _logger.Info($"Cargo with ID {bitrixCargo.ID} has no GuidPersona, skipping");
-                    continue;
+                    string dni = bitrixCargo.DNI;
+                    if (!string.IsNullOrEmpty(dni))
+                    {
+                        _logger.Debug($"ID: {bitrixCargo.ID}, DNI: {dni}, Title: {bitrixCargo.Title}");
+                        // Add to dictionary for lookup (normalize DNI - remove spaces, lowercase)
+                        bitrixCargosByDni[dni.Trim().ToLower().Replace(" ", "")] = bitrixCargo;
+                    }
+                    else
+                    {
+                        _logger.Debug($"ID: {bitrixCargo.ID}, DNI: [EMPTY], Title: {bitrixCargo.Title}");
+                    }
                 }
 
-                // Get the corresponding cargo from Sage using GuidPersona
-                Cargo sageCargo = _cargoRepository.GetByGuidPersona(bitrixCargo.GuidPersona);
-                if (sageCargo == null)
+                // Step 2: Get all cargos from Sage
+                List<Cargo> sageCargos = _cargoRepository.GetAll();
+                _logger.Info($"Retrieved {sageCargos.Count} cargos from Sage");
+
+                // Log Sage cargos for debugging
+                _logger.Debug("Cargos in Sage:");
+                foreach (var sageCargo in sageCargos)
                 {
-                    _logger.Info($"Cargo with GuidPersona {bitrixCargo.GuidPersona} not found in Sage");
-                    continue;
+                    string dni = sageCargo.DNI;
+                    if (!string.IsNullOrEmpty(dni))
+                    {
+                        _logger.Debug($"DNI: {dni}, CargoAdministrador: {sageCargo.CargoAdministrador}");
+                    }
+                    else
+                    {
+                        _logger.Debug($"DNI: [EMPTY], CargoAdministrador: {sageCargo.CargoAdministrador}");
+                    }
                 }
 
-                // If the cargo exists in Sage and needs to be updated in Bitrix24
-                if (BitrixCargo.NeedsCargoUpdate(bitrixCargo, sageCargo))
+                // List to track processed DNIs
+                List<string> processedDnis = new List<string>();
+
+                // Step 3: Process each cargo from Sage
+                foreach (var sageCargo in sageCargos)
                 {
-                    _logger.Info($"Updating cargo with GuidPersona {bitrixCargo.GuidPersona} in Bitrix24");
-                    BitrixCargo updatedBitrixCargo = BitrixCargo.FromSageCargo(sageCargo);
-                    await _bitrixClient.UpdateCargoAsync(bitrixCargo.ID, updatedBitrixCargo);
+                    if (cancellationToken.IsCancellationRequested) return;
+
+                    // Skip if DNI is empty
+                    if (string.IsNullOrEmpty(sageCargo.DNI))
+                    {
+                        _logger.Info($"Skipping cargo with empty DNI");
+                        continue;
+                    }
+
+                    // Normalize DNI (trim, lowercase, remove spaces)
+                    string normalizedDni = sageCargo.DNI.Trim().ToLower().Replace(" ", "");
+
+                    // Check if this cargo already exists in Bitrix24
+                    if (bitrixCargosByDni.TryGetValue(normalizedDni, out BitrixCargo existingBitrix))
+                    {
+                        // Update if needed
+                        if (BitrixCargo.NeedsCargoUpdate(existingBitrix, sageCargo))
+                        {
+                            _logger.Info($"Updating cargo with DNI {normalizedDni} in Bitrix24");
+                            BitrixCargo updatedBitrixCargo = BitrixCargo.FromSageCargo(sageCargo);
+                            await _bitrixClient.UpdateCargoAsync(existingBitrix.ID, updatedBitrixCargo);
+                        }
+                        else
+                        {
+                            _logger.Info($"No update needed for cargo with DNI {normalizedDni}");
+                        }
+                    }
+                    else
+                    {
+                        // Create new cargo
+                        _logger.Info($"Creating new cargo with DNI {normalizedDni} in Bitrix24");
+                        BitrixCargo newBitrixCargo = BitrixCargo.FromSageCargo(sageCargo);
+                        await _bitrixClient.CreateCargoAsync(newBitrixCargo);
+                    }
+
+                    // Add this DNI to the processed list
+                    processedDnis.Add(normalizedDni);
                 }
 
-                // Add this GuidPersona to the processed list
-                processedGuids.Add(bitrixCargo.GuidPersona);
+                // Step 4: Optional - Check for obsolete cargos in Bitrix24
+                foreach (var bitrixCargo in bitrixCargos)
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+
+                    if (!string.IsNullOrEmpty(bitrixCargo.DNI))
+                    {
+                        string normalizedDni = bitrixCargo.DNI.Trim().ToLower().Replace(" ", "");
+                        if (!processedDnis.Contains(normalizedDni))
+                        {
+                            _logger.Info($"Found obsolete cargo in Bitrix24 with DNI {bitrixCargo.DNI} - consider removing");
+                            // Uncomment if you want to delete obsolete items
+                            // await _bitrixClient.DeleteCargoAsync(bitrixCargo.ID);
+                        }
+                    }
+                }
+
+                _logger.Info("Cargos synchronization completed successfully");
             }
-
-            // Step 3: Get cargos from Sage that don't exist in Bitrix24
-            List<Cargo> sageCargos = _cargoRepository.GetAllExcept(processedGuids);
-            _logger.Info($"Found {sageCargos.Count} new cargos in Sage to create in Bitrix24");
-
-            // Step 4: Create new cargos in Bitrix24
-            foreach (var sageCargo in sageCargos)
+            catch (Exception ex)
             {
-                if (cancellationToken.IsCancellationRequested) return;
-
-                // Skip if GuidPersona is empty
-                if (string.IsNullOrEmpty(sageCargo.GuidPersona))
-                {
-                    _logger.Info($"Skipping cargo with empty GuidPersona");
-                    continue;
-                }
-
-                _logger.Info($"Creating new cargo with GuidPersona {sageCargo.GuidPersona} in Bitrix24");
-                BitrixCargo newBitrixCargo = BitrixCargo.FromSageCargo(sageCargo);
-                await _bitrixClient.CreateCargoAsync(newBitrixCargo);
+                _logger.Error($"Error during Cargos synchronization: {ex.Message}");
+                _logger.Error(ex.StackTrace);
+                throw;
             }
-
-            _logger.Info("Cargos synchronization completed successfully");
         }
 
         #endregion
