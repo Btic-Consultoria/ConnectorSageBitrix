@@ -215,6 +215,8 @@ namespace ConnectorSageBitrix
                 var cargoRepository = new CargoRepository(_databaseManager, _logger);
                 var actividadRepository = new ActividadRepository(_databaseManager, _logger);
                 var modeloRepository = new ModeloRepository(_databaseManager, _logger);
+                var companyRepository = new CompanyRepository(_databaseManager, _logger);
+                var productRepository = new ProductRepository(_databaseManager, _logger);
 
                 File.AppendAllText(diagFile, $"{DateTime.Now}: Repositorios creados\r\n");
 
@@ -231,6 +233,8 @@ namespace ConnectorSageBitrix
                     cargoRepository,
                     actividadRepository,
                     modeloRepository,
+                    companyRepository,
+                    productRepository,
                     _logger,
                     _config
                 );

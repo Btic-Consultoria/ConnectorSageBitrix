@@ -203,7 +203,7 @@ namespace ConnectorSageBitrix.Bitrix
                 fields = new
                 {
                     title = actividad.Title,
-                    ufCrm59GuidActividad = actividad.GuidActividad,
+                    ufCrm59Guidactividad = actividad.GuidActividad,
                     ufCrm59Descripcion = actividad.Descripcion,
                     ufCrm_59_CNAE_93 = actividad.CNAE93,
                     ufCrm59AltaIae = actividad.AltaIAE,
@@ -218,6 +218,8 @@ namespace ConnectorSageBitrix.Bitrix
             };
 
             _logger.Debug($"Creating actividad with GuidActividad: {actividad.GuidActividad}");
+
+            _logger.Debug($"BODY: {body}");
 
             var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
 
@@ -235,7 +237,7 @@ namespace ConnectorSageBitrix.Bitrix
                 fields = new
                 {
                     title = actividad.Title,
-                    ufCrm59GuidActividad = actividad.GuidActividad,
+                    ufCrm59Guidactividad = actividad.GuidActividad,
                     ufCrm59Descripcion = actividad.Descripcion,
                     ufCrm_59_CNAE_93 = actividad.CNAE93,
                     ufCrm59AltaIae = actividad.AltaIAE,
@@ -340,6 +342,7 @@ namespace ConnectorSageBitrix.Bitrix
             _logger.Debug($"Making request to: {url}");
 
             string jsonBody = JsonConvert.SerializeObject(body);
+            _logger.Debug($"Request body: {jsonBody}");
             StringContent content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
             HttpResponseMessage response = await _httpClient.PostAsync(url, content);
@@ -362,6 +365,172 @@ namespace ConnectorSageBitrix.Bitrix
         public void Dispose()
         {
             _httpClient?.Dispose();
+        }
+
+        #endregion
+
+        #region Companies
+
+        public async Task<List<BitrixCompany>> ListCompaniesAsync()
+        {
+            var body = new
+            {
+                entityTypeId = BitrixConstants.EntityTypeCompanies
+            };
+
+            _logger.Debug("Requesting companies list from Bitrix24");
+
+            var response = await DoRequestAsync<BitrixItemListResponse<BitrixCompany>>("crm.item.list", body);
+
+            if (response?.Result?.Items == null)
+            {
+                return new List<BitrixCompany>();
+            }
+
+            _logger.Debug($"Retrieved {response.Result.Items.Count} companies from Bitrix24");
+            return response.Result.Items;
+        }
+
+        public async Task<int> CreateCompanyAsync(BitrixCompany company)
+        {
+            var body = new
+            {
+                fields = new
+                {
+                    title = company.Title,
+                    ufCrmCompanyCategoria = company.CodigoCategoriaCliente,
+                    ufCrmCompanyRazon = company.RazonSocial,
+                    ufCrmCompanyDivisa = company.CodigoDivisa,
+                    ufCrmCompanyDomicilio = company.Domicilio,
+                    ufCrmCompanyDomicilio2 = company.Domicilio2,
+                    ufCrmCompanyMunicipio = company.Municipio,
+                    ufCrmCompanyCodigoPostal = company.CodigoPostal,
+                    ufCrmCompanyProvincia = company.Provincia,
+                    ufCrmCompanyNacion = company.Nacion,
+                    ufCrmCompanyCodigoNacion = company.CodigoNacion,
+                    ufCrmCompanyTelefono = company.Telefono,
+                    ufCrmCompanyEmail = company.EMail1
+                },
+                entityTypeId = BitrixConstants.EntityTypeCompanies
+            };
+
+            _logger.Debug($"Creating company with codigo: {company.CodigoCategoriaCliente}");
+
+            var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
+
+            int id = response?.Result?.Item?.ID ?? 0;
+            _logger.Debug($"Created company with ID: {id}");
+
+            return id;
+        }
+
+        public async Task UpdateCompanyAsync(int id, BitrixCompany company)
+        {
+            var body = new
+            {
+                id = id,
+                fields = new
+                {
+                    title = company.Title,
+                    ufCrmCompanyCategoria = company.CodigoCategoriaCliente,
+                    ufCrmCompanyRazon = company.RazonSocial,
+                    ufCrmCompanyDivisa = company.CodigoDivisa,
+                    ufCrmCompanyDomicilio = company.Domicilio,
+                    ufCrmCompanyDomicilio2 = company.Domicilio2,
+                    ufCrmCompanyMunicipio = company.Municipio,
+                    ufCrmCompanyCodigoPostal = company.CodigoPostal,
+                    ufCrmCompanyProvincia = company.Provincia,
+                    ufCrmCompanyNacion = company.Nacion,
+                    ufCrmCompanyCodigoNacion = company.CodigoNacion,
+                    ufCrmCompanyTelefono = company.Telefono,
+                    ufCrmCompanyEmail = company.EMail1
+                },
+                entityTypeId = BitrixConstants.EntityTypeCompanies
+            };
+
+            _logger.Debug($"Updating company with ID: {id}");
+
+            await DoRequestAsync<BitrixUpdateResponse>("crm.item.update", body);
+
+            _logger.Debug($"Successfully updated company with ID: {id}");
+        }
+
+        #endregion
+
+        #region Products
+
+        public async Task<List<BitrixProduct>> ListProductsAsync()
+        {
+            var body = new
+            {
+                entityTypeId = BitrixConstants.EntityTypeProducts
+            };
+
+            _logger.Debug("Requesting products list from Bitrix24");
+
+            var response = await DoRequestAsync<BitrixItemListResponse<BitrixProduct>>("crm.item.list", body);
+
+            if (response?.Result?.Items == null)
+            {
+                return new List<BitrixProduct>();
+            }
+
+            _logger.Debug($"Retrieved {response.Result.Items.Count} products from Bitrix24");
+            return response.Result.Items;
+        }
+
+        public async Task<int> CreateProductAsync(BitrixProduct product)
+        {
+            var body = new
+            {
+                fields = new
+                {
+                    title = product.Title,
+                    ufCrmProductCodigo = product.CodigoArticulo,
+                    ufCrmProductDescripcion = product.DescripcionArticulo,
+                    ufCrmProductObsoleto = product.ObsoletoLc,
+                    ufCrmProductLinea = product.DescripcionLinea,
+                    ufCrmProductPrecio = product.PrecioVenta,
+                    ufCrmProductDivisa = product.CodigoDivisa,
+                    ufCrmProductIvaIncluido = product.IvaIncluido
+                },
+                entityTypeId = BitrixConstants.EntityTypeProducts
+            };
+
+            _logger.Debug($"Creating product with codigo: {product.CodigoArticulo}");
+
+            var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
+
+            int id = response?.Result?.Item?.ID ?? 0;
+            _logger.Debug($"Created product with ID: {id}");
+
+            return id;
+        }
+
+        public async Task UpdateProductAsync(int id, BitrixProduct product)
+        {
+            var body = new
+            {
+                id = id,
+                fields = new
+                {
+                    title = product.Title,
+                    ufCrmProductCodigo = product.CodigoArticulo,
+                    ufCrmProductDescripcion = product.DescripcionArticulo,
+                    ufCrmProductObsoleto = product.ObsoletoLc,
+                    ufCrmProductLinea = product.DescripcionLinea,
+                    ufCrmProductPrecio = product.PrecioVenta,
+                    ufCrmProductDivisa = product.CodigoDivisa,
+                    ufCrmProductIvaIncluido = product.IvaIncluido
+                },
+                entityTypeId = BitrixConstants.EntityTypeProducts
+            };
+
+            _logger.Debug($"Updating product with ID: {id}");
+
+            await DoRequestAsync<BitrixUpdateResponse>("crm.item.update", body);
+
+            _logger.Debug($"Successfully updated product with ID: {id}");
         }
 
         #endregion

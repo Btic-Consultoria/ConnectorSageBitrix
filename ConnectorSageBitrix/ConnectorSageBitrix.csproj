@@ -52,8 +52,10 @@
     <Compile Include="Bitrix\BitrixActividad.cs" />
     <Compile Include="Bitrix\BitrixCargo.cs" />
     <Compile Include="Bitrix\BitrixClient.cs" />
+    <Compile Include="Bitrix\BitrixCompany.cs" />
     <Compile Include="Bitrix\BitrixConstants.cs" />
     <Compile Include="Bitrix\BitrixModelo.cs" />
+    <Compile Include="Bitrix\BitrixProduct.cs" />
     <Compile Include="Bitrix\BitrixSocio.cs" />
     <Compile Include="Config\AppConfig.cs" />
     <Compile Include="Config\ConfigManager.cs" />
@@ -62,14 +64,18 @@
     <Compile Include="Logging\Logger.cs" />
     <Compile Include="Models\Actividad.cs" />
     <Compile Include="Models\Cargo.cs" />
+    <Compile Include="Models\Company.cs" />
     <Compile Include="Models\Modelo.cs" />
+    <Compile Include="Models\Product.cs" />
     <Compile Include="Models\Socio.cs" />
     <Compile Include="ProjectInstaller.cs">
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="Repositories\ActividadRepository.cs" />
     <Compile Include="Repositories\CargoRepository.cs" />
+    <Compile Include="Repositories\CompanyRepository.cs" />
     <Compile Include="Repositories\ModeloRepository.cs" />
+    <Compile Include="Repositories\ProductRepository.cs" />
     <Compile Include="Repositories\SocioRepository.cs" />
     <Compile Include="SyncService.cs">
       <SubType>Component</SubType>

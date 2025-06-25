@@ -17,6 +17,8 @@ namespace ConnectorSageBitrix.Sync
         private readonly CargoRepository _cargoRepository;
         private readonly ActividadRepository _actividadRepository;
         private readonly ModeloRepository _modeloRepository;
+        private readonly CompanyRepository _companyRepository;
+        private readonly ProductRepository _productRepository;
         private readonly Logger _logger;
         private readonly AppConfig _config;
         private bool _disposed = false;
@@ -27,6 +29,8 @@ namespace ConnectorSageBitrix.Sync
             CargoRepository cargoRepository,
             ActividadRepository actividadRepository,
             ModeloRepository modeloRepository,
+            CompanyRepository companyRepository,
+            ProductRepository productRepository,
             Logger logger,
             AppConfig config)
         {
@@ -35,6 +39,8 @@ namespace ConnectorSageBitrix.Sync
             _cargoRepository = cargoRepository;
             _actividadRepository = actividadRepository;
             _modeloRepository = modeloRepository;
+            _companyRepository = companyRepository;
+            _productRepository = productRepository;
             _logger = logger;
             _config = config;
         }
@@ -343,6 +349,7 @@ namespace ConnectorSageBitrix.Sync
                         // Update if needed
                         if (BitrixActividad.NeedsActividadUpdate(existingBitrix, sageActividad))
                         {
+                            _logger.Info($"Found existing actividad with GUID {sageActividad} in Bitrix24");
                             _logger.Info($"Updating actividad with GUID {normalizedGuid} in Bitrix24");
                             BitrixActividad updatedBitrixActividad = BitrixActividad.FromSageActividad(sageActividad);
                             await _bitrixClient.UpdateActividadAsync(existingBitrix.ID, updatedBitrixActividad);
@@ -356,6 +363,7 @@ namespace ConnectorSageBitrix.Sync
                     {
                         // Create new actividad
                         _logger.Info($"Creating new actividad with GUID {normalizedGuid} in Bitrix24");
+                        _logger.Info($"Found created actividad with GUID {sageActividad.GuidActividad} in Bitrix24");
                         BitrixActividad newBitrixActividad = BitrixActividad.FromSageActividad(sageActividad);
                         await _bitrixClient.CreateActividadAsync(newBitrixActividad);
                     }
@@ -493,6 +501,256 @@ namespace ConnectorSageBitrix.Sync
             }
 
             _logger.Info("Modelos synchronization completed successfully");
+        }
+
+        #endregion
+
+        #region Companies Sync
+
+        private async Task SyncCompaniesAsync(CancellationToken cancellationToken)
+        {
+            _logger.Info("Starting Companies synchronization");
+
+            try
+            {
+                // Step 1: Get all companies from Bitrix24
+                List<BitrixCompany> bitrixCompanies = await _bitrixClient.ListCompaniesAsync();
+                _logger.Info($"Retrieved {bitrixCompanies.Count} companies from Bitrix24");
+
+                // Create a dictionary to store Bitrix companies by CodigoCategoriaCliente for efficient lookup
+                Dictionary<string, BitrixCompany> bitrixCompaniesByCodigo = new Dictionary<string, BitrixCompany>(StringComparer.OrdinalIgnoreCase);
+
+                // Log existing companies for debugging
+                _logger.Debug("Existing companies in Bitrix24:");
+                foreach (var bitrixCompany in bitrixCompanies)
+                {
+                    string codigo = bitrixCompany.CodigoCategoriaCliente;
+                    if (!string.IsNullOrEmpty(codigo))
+                    {
+                        _logger.Debug($"ID: {bitrixCompany.ID}, Codigo: {codigo}, Title: {bitrixCompany.Title}");
+                        // Add to dictionary for lookup (normalize codigo - remove spaces, lowercase)
+                        bitrixCompaniesByCodigo[codigo.Trim().ToLower().Replace(" ", "")] = bitrixCompany;
+                    }
+                    else
+                    {
+                        _logger.Debug($"ID: {bitrixCompany.ID}, Codigo: [EMPTY], Title: {bitrixCompany.Title}");
+                    }
+                }
+
+                // Step 2: Get all companies from Sage
+                List<Company> sageCompanies = _companyRepository.GetAll();
+                _logger.Info($"Retrieved {sageCompanies.Count} companies from Sage");
+
+                // Log Sage companies for debugging
+                _logger.Debug("Companies in Sage:");
+                foreach (var sageCompany in sageCompanies)
+                {
+                    string codigo = sageCompany.CodigoCategoriaCliente;
+                    if (!string.IsNullOrEmpty(codigo))
+                    {
+                        _logger.Debug($"Codigo: {codigo}, RazonSocial: {sageCompany.RazonSocial}");
+                    }
+                    else
+                    {
+                        _logger.Debug($"Codigo: [EMPTY], RazonSocial: {sageCompany.RazonSocial}");
+                    }
+                }
+
+                // List to track processed codigos
+                List<string> processedCodigos = new List<string>();
+
+                // Step 3: Process each company from Sage
+                foreach (var sageCompany in sageCompanies)
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+
+                    // Skip if codigo is empty
+                    if (string.IsNullOrEmpty(sageCompany.CodigoCategoriaCliente))
+                    {
+                        _logger.Info($"Skipping company with empty codigo");
+                        continue;
+                    }
+
+                    // Normalize codigo (trim, lowercase, remove spaces)
+                    string normalizedCodigo = sageCompany.CodigoCategoriaCliente.Trim().ToLower().Replace(" ", "");
+
+                    // Check if this company already exists in Bitrix24
+                    if (bitrixCompaniesByCodigo.TryGetValue(normalizedCodigo, out BitrixCompany existingBitrix))
+                    {
+                        // Update if needed
+                        if (BitrixCompany.NeedsCompanyUpdate(existingBitrix, sageCompany))
+                        {
+                            _logger.Info($"Updating company with codigo {normalizedCodigo} in Bitrix24");
+                            BitrixCompany updatedBitrixCompany = BitrixCompany.FromSageCompany(sageCompany);
+                            await _bitrixClient.UpdateCompanyAsync(existingBitrix.ID, updatedBitrixCompany);
+                        }
+                        else
+                        {
+                            _logger.Info($"No update needed for company with codigo {normalizedCodigo}");
+                        }
+                    }
+                    else
+                    {
+                        // Create new company
+                        _logger.Info($"Creating new company with codigo {normalizedCodigo} in Bitrix24");
+                        BitrixCompany newBitrixCompany = BitrixCompany.FromSageCompany(sageCompany);
+                        await _bitrixClient.CreateCompanyAsync(newBitrixCompany);
+                    }
+
+                    // Add this codigo to the processed list
+                    processedCodigos.Add(normalizedCodigo);
+                }
+
+                // Step 4: Optional - Check for obsolete companies in Bitrix24
+                foreach (var bitrixCompany in bitrixCompanies)
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+
+                    if (!string.IsNullOrEmpty(bitrixCompany.CodigoCategoriaCliente))
+                    {
+                        string normalizedCodigo = bitrixCompany.CodigoCategoriaCliente.Trim().ToLower().Replace(" ", "");
+                        if (!processedCodigos.Contains(normalizedCodigo))
+                        {
+                            _logger.Info($"Found obsolete company in Bitrix24 with codigo {bitrixCompany.CodigoCategoriaCliente} - consider removing");
+                            // Uncomment if you want to delete obsolete items
+                            // await _bitrixClient.DeleteCompanyAsync(bitrixCompany.ID);
+                        }
+                    }
+                }
+
+                _logger.Info("Companies synchronization completed successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error during Companies synchronization: {ex.Message}");
+                _logger.Error(ex.StackTrace);
+                throw;
+            }
+        }
+
+        #endregion
+
+        #region Products Sync
+
+        private async Task SyncProductsAsync(CancellationToken cancellationToken)
+        {
+            _logger.Info("Starting Products synchronization");
+
+            try
+            {
+                // Step 1: Get all products from Bitrix24
+                List<BitrixProduct> bitrixProducts = await _bitrixClient.ListProductsAsync();
+                _logger.Info($"Retrieved {bitrixProducts.Count} products from Bitrix24");
+
+                // Create a dictionary to store Bitrix products by CodigoArticulo for efficient lookup
+                Dictionary<string, BitrixProduct> bitrixProductsByCodigo = new Dictionary<string, BitrixProduct>(StringComparer.OrdinalIgnoreCase);
+
+                // Log existing products for debugging
+                _logger.Debug("Existing products in Bitrix24:");
+                foreach (var bitrixProduct in bitrixProducts)
+                {
+                    string codigo = bitrixProduct.CodigoArticulo;
+                    if (!string.IsNullOrEmpty(codigo))
+                    {
+                        _logger.Debug($"ID: {bitrixProduct.ID}, Codigo: {codigo}, Title: {bitrixProduct.Title}");
+                        // Add to dictionary for lookup (normalize codigo - remove spaces, lowercase)
+                        bitrixProductsByCodigo[codigo.Trim().ToLower().Replace(" ", "")] = bitrixProduct;
+                    }
+                    else
+                    {
+                        _logger.Debug($"ID: {bitrixProduct.ID}, Codigo: [EMPTY], Title: {bitrixProduct.Title}");
+                    }
+                }
+
+                // Step 2: Get all products from Sage
+                List<Product> sageProducts = _productRepository.GetAll();
+                _logger.Info($"Retrieved {sageProducts.Count} products from Sage");
+
+                // Log Sage products for debugging
+                _logger.Debug("Products in Sage:");
+                foreach (var sageProduct in sageProducts)
+                {
+                    string codigo = sageProduct.CodigoArticulo;
+                    if (!string.IsNullOrEmpty(codigo))
+                    {
+                        _logger.Debug($"Codigo: {codigo}, Descripcion: {sageProduct.DescripcionArticulo}");
+                    }
+                    else
+                    {
+                        _logger.Debug($"Codigo: [EMPTY], Descripcion: {sageProduct.DescripcionArticulo}");
+                    }
+                }
+
+                // List to track processed codigos
+                List<string> processedCodigos = new List<string>();
+
+                // Step 3: Process each product from Sage
+                foreach (var sageProduct in sageProducts)
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+
+                    // Skip if codigo is empty
+                    if (string.IsNullOrEmpty(sageProduct.CodigoArticulo))
+                    {
+                        _logger.Info($"Skipping product with empty codigo");
+                        continue;
+                    }
+
+                    // Normalize codigo (trim, lowercase, remove spaces)
+                    string normalizedCodigo = sageProduct.CodigoArticulo.Trim().ToLower().Replace(" ", "");
+
+                    // Check if this product already exists in Bitrix24
+                    if (bitrixProductsByCodigo.TryGetValue(normalizedCodigo, out BitrixProduct existingBitrix))
+                    {
+                        // Update if needed
+                        if (BitrixProduct.NeedsProductUpdate(existingBitrix, sageProduct))
+                        {
+                            _logger.Info($"Updating product with codigo {normalizedCodigo} in Bitrix24");
+                            BitrixProduct updatedBitrixProduct = BitrixProduct.FromSageProduct(sageProduct);
+                            await _bitrixClient.UpdateProductAsync(existingBitrix.ID, updatedBitrixProduct);
+                        }
+                        else
+                        {
+                            _logger.Info($"No update needed for product with codigo {normalizedCodigo}");
+                        }
+                    }
+                    else
+                    {
+                        // Create new product
+                        _logger.Info($"Creating new product with codigo {normalizedCodigo} in Bitrix24");
+                        BitrixProduct newBitrixProduct = BitrixProduct.FromSageProduct(sageProduct);
+                        await _bitrixClient.CreateProductAsync(newBitrixProduct);
+                    }
+
+                    // Add this codigo to the processed list
+                    processedCodigos.Add(normalizedCodigo);
+                }
+
+                // Step 4: Optional - Check for obsolete products in Bitrix24
+                foreach (var bitrixProduct in bitrixProducts)
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+
+                    if (!string.IsNullOrEmpty(bitrixProduct.CodigoArticulo))
+                    {
+                        string normalizedCodigo = bitrixProduct.CodigoArticulo.Trim().ToLower().Replace(" ", "");
+                        if (!processedCodigos.Contains(normalizedCodigo))
+                        {
+                            _logger.Info($"Found obsolete product in Bitrix24 with codigo {bitrixProduct.CodigoArticulo} - consider removing");
+                            // Uncomment if you want to delete obsolete items
+                            // await _bitrixClient.DeleteProductAsync(bitrixProduct.ID);
+                        }
+                    }
+                }
+
+                _logger.Info("Products synchronization completed successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error during Products synchronization: {ex.Message}");
+                _logger.Error(ex.StackTrace);
+                throw;
+            }
         }
 
         #endregion

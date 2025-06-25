@@ -1,6 +1,7 @@
 ﻿using System;
 using Newtonsoft.Json;
 using ConnectorSageBitrix.Models;
+using ConnectorSageBitrix.Logging;
 
 namespace ConnectorSageBitrix.Bitrix
 {
@@ -25,7 +26,7 @@ namespace ConnectorSageBitrix.Bitrix
         public int? EntityTypeID { get; set; }
 
         // Custom fields for Actividades
-        [JsonProperty("ufCrm59GuidActividad")]
+        [JsonProperty("ufCrm59Guidactividad")]
         public string GuidActividad { get; set; }
 
         [JsonProperty("ufCrm59Descripcion")]
@@ -97,6 +98,7 @@ namespace ConnectorSageBitrix.Bitrix
         // Create from Sage model
         public static BitrixActividad FromSageActividad(Actividad actividad)
         {
+            
             string principal = actividad.Principal ? "Y" : "N";
 
             // Format dates for Bitrix
