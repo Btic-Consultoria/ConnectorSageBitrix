@@ -1,5 +1,7 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.IO;
+using ConnectorSageBitrix.Models;
 
 namespace ConnectorSageBitrix.Config
 {
@@ -25,6 +27,9 @@ namespace ConnectorSageBitrix.Config
         // Sync enabled flag
         public bool PackEmpresa { get; set; }
 
+        // Field mappings configuration
+        public List<FieldMapping> FieldMappings { get; set; }
+
         public AppConfig()
         {
             // Initialize with default values
@@ -32,6 +37,7 @@ namespace ConnectorSageBitrix.Config
             Bitrix = new BitrixConfig();
             Sync = new SyncConfig();
             App = new AppSettings();
+            FieldMappings = new List<FieldMapping>();
 
             // Default sync settings
             Sync.Interval = TimeSpan.FromMinutes(5);
@@ -58,7 +64,7 @@ namespace ConnectorSageBitrix.Config
         public string LicenseID { get; set; }
 
         public string ConnectionString =>
-    $"Data Source={Host},{Port};Initial Catalog={Database};User ID={User};Password={Password};Connection Timeout=60;TrustServerCertificate=True;";
+            $"Data Source={Host},{Port};Initial Catalog={Database};User ID={User};Password={Password};Connection Timeout=60;TrustServerCertificate=True;";
     }
 
     public class BitrixConfig

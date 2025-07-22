@@ -1,268 +1,128 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
+using System.Configuration;
 using System.IO;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using System.Xml;
-using System.Configuration;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using ConnectorSageBitrix.Logging;
-using System.Net.NetworkInformation;
-using System.Xml.Linq;
-using System.Linq;
+using ConnectorSageBitrix.Models;
 
 namespace ConnectorSageBitrix.Config
 {
     public static class ConfigManager
     {
-        private const string EncryptedConfigPath = @"C:\ProgramData\Btic\ConfigConnectorBitrix\config";
+        private static readonly object _lockObject = new object();
+        private static AppConfig _cachedConfig = null;
+        private static DateTime _configLoadTime = DateTime.MinValue;
+        private static readonly TimeSpan ConfigCacheTime = TimeSpan.FromMinutes(5);
 
-        private static Logger _logger;
-
-        public static AppConfig Load(Logger logger = null)
+        public static AppConfig LoadConfig()
         {
-            _logger = logger;
-
-            try
+            lock (_lockObject)
             {
-                Log("Starting configuration loading process");
+                // Use cached config if it's still valid
+                if (_cachedConfig != null && (DateTime.Now - _configLoadTime) < ConfigCacheTime)
+                {
+                    Log("Using cached configuration");
+                    return _cachedConfig;
+                }
 
-                // Initialize a new config with default values
-                var config = new AppConfig();
-                Log("Default configuration: Synchronization disabled");
+                Log("Loading configuration...");
 
-                // First try to load encrypted config
-                Log("Attempting to load encrypted configuration");
+                // Try to load from encrypted file first
                 var encryptedConfig = LoadEncryptedConfig();
-
                 if (encryptedConfig != null)
                 {
-                    Log("Successfully loaded encrypted configuration");
-
-                    // Set client code from encrypted config
-                    config.ClientCode = encryptedConfig["CodigoCliente"]?.Value<string>();
-                    Log($"Client code from encrypted config: {config.ClientCode}");
-
-                    // Always set BitrixClientCode to the root CodigoCliente for now
-                    config.BitrixClientCode = config.ClientCode;
-
-                    // Set DB configuration from encrypted config
-                    var dbSection = encryptedConfig["DB"] as JObject;
-                    if (dbSection != null)
-                    {
-                        Log("Processing DB section from encrypted config");
-                        config.DB.Host = dbSection["DB_Host"]?.Value<string>();
-                        Log($"DB Host: {config.DB.Host}");
-
-                        config.DB.Port = dbSection["DB_Port"]?.Value<string>();
-                        Log($"DB Port: {config.DB.Port}");
-
-                        config.DB.Database = dbSection["DB_Database"]?.Value<string>();
-                        Log($"DB Database: {config.DB.Database}");
-
-                        config.DB.User = dbSection["DB_Username"]?.Value<string>();
-                        Log($"DB Username: {config.DB.User}");
-
-                        config.DB.Password = dbSection["DB_Password"]?.Value<string>();
-                        Log("DB Password: [REDACTED]");
-
-                        config.DB.LicenseID = dbSection["IdLlicencia"]?.Value<string>();
-                        Log($"License ID: {config.DB.LicenseID}");
-                    }
-                    else
-                    {
-                        Log("DB section not found in encrypted config");
-                    }
-
-                    // Set Bitrix URL from encrypted config
-                    var bitrixSection = encryptedConfig["Bitrix24"]?.Value<JObject>();
-                    if (bitrixSection != null)
-                    {
-                        Log("Processing Bitrix24 section from encrypted config");
-                        string apiTenant = bitrixSection["API_Tenant"]?.Value<string>();
-                        if (!string.IsNullOrEmpty(apiTenant))
-                        {
-                            config.Bitrix.URL = apiTenant;
-                            Log($"Bitrix URL: {config.Bitrix.URL}");
-                        }
-
-                        // Set PackEmpresa flag from encrypted config
-                        config.PackEmpresa = bitrixSection["pack_empresa"]?.Value<bool>() ?? false;
-                        Log($"PackEmpresa: {config.PackEmpresa}");
-                    }
-                    else
-                    {
-                        Log("Bitrix24 section not found in encrypted config");
-                    }
+                    Log("Loaded configuration from encrypted file");
+                    _cachedConfig = encryptedConfig;
+                    _configLoadTime = DateTime.Now;
+                    return encryptedConfig;
                 }
-                else
+
+                // Fallback to App.config
+                Log("Loading configuration from App.config");
+                var config = LoadFromAppConfig();
+
+                if (config != null && ValidateConfig(config))
                 {
-                    Log("Failed to load encrypted config - falling back to App.config");
-                    // Rest of App.config fallback logic...
+                    _cachedConfig = config;
+                    _configLoadTime = DateTime.Now;
+                    return config;
                 }
 
-                // Validate configuration
-                Log("Validating configuration");
-                if (!ValidateConfig(config))
-                {
-                    Log("Configuration validation failed");
-                    return null;
-                }
-
-                Log("Configuration loaded successfully");
-                return config;
-            }
-            catch (Exception ex)
-            {
-                Log($"Critical error loading configuration: {ex.Message}", LogLevel.Error);
-                Log($"Stack trace: {ex.StackTrace}", LogLevel.Error);
+                Log("Failed to load valid configuration from any source");
                 return null;
             }
         }
 
-        // Método auxiliar para logs
-        private static void Log(string message, LogLevel level = LogLevel.Info)
-        {
-            if (_logger == null)
-            {
-                Console.WriteLine(message);
-                return;
-            }
-
-            switch (level)
-            {
-                case LogLevel.Info:
-                    _logger.Info(message);
-                    break;
-                case LogLevel.Debug:
-                    _logger.Debug(message);
-                    break;
-                case LogLevel.Error:
-                    _logger.Error(message);
-                    break;
-                case LogLevel.Fatal:
-                    _logger.Fatal(message);
-                    break;
-            }
-        }
-
-        private enum LogLevel
-        {
-            Info,
-            Debug,
-            Error,
-            Fatal
-        }
-
-        private static JObject LoadEncryptedConfig()
+        private static AppConfig LoadFromAppConfig()
         {
             try
             {
-                string configPath = EncryptedConfigPath;
-                Log($"Attempting to load encrypted config from: {configPath}");
+                var config = new AppConfig
+                {
+                    ClientCode = ConfigurationManager.AppSettings["CLIENT_CODE"],
+                    BitrixClientCode = ConfigurationManager.AppSettings["BITRIX_CLIENT_CODE"],
+                    PackEmpresa = bool.Parse(ConfigurationManager.AppSettings["PACK_EMPRESA"] ?? "false"),
 
-                // Check if the file exists
+                    DB = new DatabaseConfig
+                    {
+                        Host = ConfigurationManager.AppSettings["DB_HOST"],
+                        Port = ConfigurationManager.AppSettings["DB_PORT"] ?? "1433",
+                        Database = ConfigurationManager.AppSettings["DB_DATABASE"],
+                        User = ConfigurationManager.AppSettings["DB_USERNAME"],
+                        Password = ConfigurationManager.AppSettings["DB_PASSWD"],
+                        LicenseID = ConfigurationManager.AppSettings["LICENSE_ID"]
+                    },
+
+                    Bitrix = new BitrixConfig
+                    {
+                        URL = ConfigurationManager.AppSettings["BITRIX_URL"]
+                    },
+
+                    Sync = new SyncConfig
+                    {
+                        Interval = TimeSpan.FromMinutes(
+                            int.Parse(ConfigurationManager.AppSettings["SYNC_INTERVAL_MINUTES"] ?? "5"))
+                    },
+
+                    // Load default field mappings for App.config
+                    FieldMappings = GetDefaultFieldMappings()
+                };
+
+                Log("Configuration loaded from App.config");
+                return config;
+            }
+            catch (Exception ex)
+            {
+                Log($"Error loading App.config: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static AppConfig LoadEncryptedConfig()
+        {
+            try
+            {
+                // Standard config file path
+                string configPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                    "Btic", "ConfigConnectorBitrix", "config");
+
+                Log($"Looking for encrypted config at: {configPath}");
+
                 if (!File.Exists(configPath))
                 {
-                    Log($"Encrypted config file not found at {configPath}");
+                    Log("Encrypted config file not found");
                     return null;
                 }
 
-                // Read encrypted file
                 byte[] encryptedData;
                 try
                 {
                     encryptedData = File.ReadAllBytes(configPath);
                     Log($"Read {encryptedData.Length} bytes from encrypted config file");
-
-                    // DIAGNOSTIC: Add hex dump of first 32 bytes
-                    StringBuilder hexDump = new StringBuilder("First 32 bytes (hex): ");
-                    for (int i = 0; i < Math.Min(32, encryptedData.Length); i++)
-                    {
-                        hexDump.Append(encryptedData[i].ToString("X2") + " ");
-                    }
-                    Log(hexDump.ToString());
-
-                    // Check if file has metadata header (first 4 bytes = metadata length)
-                    if (encryptedData.Length >= 4)
-                    {
-                        int metadataLen = BitConverter.ToInt32(encryptedData, 0);
-                        Log($"Detected metadata header. Indicated metadata length: {metadataLen} bytes");
-
-                        if (metadataLen > 0 && metadataLen < 200 && encryptedData.Length >= 4 + metadataLen)
-                        {
-                            string metadataStr = Encoding.UTF8.GetString(encryptedData, 4, metadataLen);
-                            Log($"Found metadata: {metadataStr}");
-
-                            // Try to parse metadata to extract info
-                            string extractedMac = "";
-                            string extractedHost = "";
-                            string extractedKeyChar = "T";
-
-                            foreach (var part in metadataStr.Split(';'))
-                            {
-                                if (part.StartsWith("MAC="))
-                                    extractedMac = part.Substring(4);
-                                else if (part.StartsWith("HOST="))
-                                    extractedHost = part.Substring(5);
-                                else if (part.StartsWith("KEY_CHAR="))
-                                    extractedKeyChar = part.Substring(9);
-                            }
-
-                            if (!string.IsNullOrEmpty(extractedMac) && !string.IsNullOrEmpty(extractedHost))
-                            {
-                                Log($"Will use MAC={extractedMac}, HOST={extractedHost}, KEY_CHAR={extractedKeyChar} from metadata");
-
-                                // Use extracted info for decryption
-                                string metadataComputerInfo = extractedMac + extractedHost;
-                                Log($"Using computer info from metadata: {metadataComputerInfo}");
-
-                                char keyChar = extractedKeyChar.Length > 0 ? extractedKeyChar[0] : 'T';
-
-                                // Generate key and IV
-                                byte[] metadataKey = GetKey(32, metadataComputerInfo, keyChar);
-                                byte[] metadataIv = GetKey(16, metadataComputerInfo, keyChar);
-                                Log($"Generated key length: {metadataKey.Length}, IV length: {metadataIv.Length}");
-
-                                // Log key/IV hexadecimal representation
-                                Log($"Key (hex): {BitConverter.ToString(metadataKey).Replace("-", "")}");
-                                Log($"IV (hex): {BitConverter.ToString(metadataIv).Replace("-", "")}");
-
-                                // Extract just the encrypted part
-                                byte[] actualEncryptedData = new byte[encryptedData.Length - (4 + metadataLen)];
-                                Array.Copy(encryptedData, 4 + metadataLen, actualEncryptedData, 0, actualEncryptedData.Length);
-
-                                // Decrypt with metadata-extracted info
-                                byte[] metadataDecryptedData = DecryptAESData(actualEncryptedData, metadataKey, metadataIv);
-                                if (metadataDecryptedData != null && metadataDecryptedData.Length > 0)
-                                {
-                                    Log("Successfully decrypted using metadata info");
-
-                                    // Convert to string and parse JSON
-                                    string metadataJsonConfig = Encoding.UTF8.GetString(metadataDecryptedData);
-                                    Log($"Decrypted JSON length: {metadataJsonConfig.Length} characters");
-                                    Log($"First 100 chars: {(metadataJsonConfig.Length > 100 ? metadataJsonConfig.Substring(0, 100) + "..." : metadataJsonConfig)}");
-
-                                    // Parse JSON
-                                    try
-                                    {
-                                        JObject metadataConfig = JObject.Parse(metadataJsonConfig);
-                                        Log("Successfully parsed JSON from metadata-based decryption");
-                                        return metadataConfig;
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Log($"Failed to parse JSON from metadata-based decryption: {ex.Message}");
-                                    }
-                                }
-                                else
-                                {
-                                    Log("Failed to decrypt using metadata info, falling back to standard method");
-                                }
-                            }
-                        }
-                    }
                 }
                 catch (Exception ex)
                 {
@@ -291,120 +151,24 @@ namespace ConnectorSageBitrix.Config
                     string charKey = "T"; // Use 'T' for config files
                     standardKey = GetKey(32, computerInfo, charKey[0]);
                     standardIv = GetKey(16, computerInfo, charKey[0]);
-                    Log($"Generated key length: {standardKey.Length}, IV length: {standardIv.Length}");
-
-                    // Add hex representation logging
-                    Log($"Key (hex): {BitConverter.ToString(standardKey).Replace("-", "")}");
-                    Log($"IV (hex): {BitConverter.ToString(standardIv).Replace("-", "")}");
+                    Log($"Generated keys - Key: {standardKey.Length} bytes, IV: {standardIv.Length} bytes");
                 }
                 catch (Exception ex)
                 {
-                    Log($"Error generating encryption keys: {ex.Message}");
+                    Log($"Error generating keys: {ex.Message}");
                     return null;
                 }
 
-                // Try with different file processing approaches
-
-                // Approach 1: Decrypt the entire file
-                byte[] standardDecryptedData = null;
+                // Decrypt the data
+                byte[] decryptedBytes;
                 try
                 {
-                    Log("Attempting standard decryption of entire file...");
-                    standardDecryptedData = DecryptAESData(encryptedData, standardKey, standardIv);
-                    if (standardDecryptedData != null && standardDecryptedData.Length > 0)
-                    {
-                        Log($"Successfully decrypted entire file, got {standardDecryptedData.Length} bytes");
-                    }
-                    else
-                    {
-                        Log("Standard decryption failed, trying other approaches");
-                    }
+                    decryptedBytes = DecryptAESData(encryptedData, standardKey, standardIv);
+                    Log($"Decrypted {decryptedBytes.Length} bytes");
                 }
                 catch (Exception ex)
                 {
-                    Log($"Error in standard decryption: {ex.Message}");
-                    standardDecryptedData = null;
-                }
-
-                // If standard decryption failed, try approach 2: Skip first 4 bytes (metadata length)
-                byte[] partialDecryptedData = null;
-                if (standardDecryptedData == null && encryptedData.Length > 4)
-                {
-                    try
-                    {
-                        Log("Attempting to decrypt without metadata length (skip first 4 bytes)...");
-                        byte[] dataWithoutHeader = new byte[encryptedData.Length - 4];
-                        Array.Copy(encryptedData, 4, dataWithoutHeader, 0, dataWithoutHeader.Length);
-
-                        partialDecryptedData = DecryptAESData(dataWithoutHeader, standardKey, standardIv);
-                        if (partialDecryptedData != null && partialDecryptedData.Length > 0)
-                        {
-                            Log($"Successfully decrypted without metadata length, got {partialDecryptedData.Length} bytes");
-                        }
-                        else
-                        {
-                            Log("Decryption without metadata length failed");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"Error in second approach: {ex.Message}");
-                    }
-                }
-
-                // Approach 3: Try with fixed key
-                byte[] fixedKeyDecryptedData = null;
-                if (standardDecryptedData == null && partialDecryptedData == null)
-                {
-                    try
-                    {
-                        Log("Attempting with fixed key 'HARDCODED_KEY'...");
-                        string fixedComputerInfo = "902E16B9AC1PC-004"; // Hardcoded common value
-
-                        byte[] fixedKey = GetKey(32, fixedComputerInfo, 'T');
-                        byte[] fixedIv = GetKey(16, fixedComputerInfo, 'T');
-
-                        Log($"Fixed key (hex): {BitConverter.ToString(fixedKey).Replace("-", "")}");
-                        Log($"Fixed IV (hex): {BitConverter.ToString(fixedIv).Replace("-", "")}");
-
-                        fixedKeyDecryptedData = DecryptAESData(encryptedData, fixedKey, fixedIv);
-                        if (fixedKeyDecryptedData != null && fixedKeyDecryptedData.Length > 0)
-                        {
-                            Log($"Successfully decrypted with fixed key, got {fixedKeyDecryptedData.Length} bytes");
-                        }
-                        else
-                        {
-                            Log("Decryption with fixed key failed");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"Error in fixed key approach: {ex.Message}");
-                    }
-                }
-
-                // Choose which decrypted data to use, based on which method succeeded
-                byte[] finalDecryptedData = null;
-                if (standardDecryptedData != null && standardDecryptedData.Length > 0)
-                {
-                    finalDecryptedData = standardDecryptedData;
-                    Log("Using standard decryption results");
-                }
-                else if (partialDecryptedData != null && partialDecryptedData.Length > 0)
-                {
-                    finalDecryptedData = partialDecryptedData;
-                    Log("Using partial decryption results (skipped metadata)");
-                }
-                else if (fixedKeyDecryptedData != null && fixedKeyDecryptedData.Length > 0)
-                {
-                    finalDecryptedData = fixedKeyDecryptedData;
-                    Log("Using fixed key decryption results");
-                }
-
-                // If all approaches failed
-                if (finalDecryptedData == null || finalDecryptedData.Length == 0)
-                {
-                    Log("All decryption approaches failed");
+                    Log($"Error decrypting data: {ex.Message}");
                     return null;
                 }
 
@@ -412,9 +176,9 @@ namespace ConnectorSageBitrix.Config
                 string standardJsonConfig;
                 try
                 {
-                    standardJsonConfig = Encoding.UTF8.GetString(finalDecryptedData);
-                    Log($"Config JSON length: {standardJsonConfig.Length} characters");
-                    Log($"First 100 chars of config: {(standardJsonConfig.Length > 100 ? standardJsonConfig.Substring(0, 100) + "..." : standardJsonConfig)}");
+                    standardJsonConfig = Encoding.UTF8.GetString(decryptedBytes).Trim();
+                    Log($"Converted to string: {(standardJsonConfig.Length > 100 ?
+                        standardJsonConfig.Substring(0, 100) + "..." : standardJsonConfig)}");
                 }
                 catch (Exception ex)
                 {
@@ -435,23 +199,8 @@ namespace ConnectorSageBitrix.Config
                 }
                 catch (JsonException ex)
                 {
-                    // Try alternative approach if the first attempt fails
-                    Log($"Error parsing JSON with default settings: {ex.Message}");
-                    try
-                    {
-                        // Try explicit UTF-8 encoding through a TextReader
-                        using (var reader = new StringReader(standardJsonConfig))
-                        {
-                            var serializer = new JsonSerializer();
-                            finalConfig = (JObject)serializer.Deserialize(reader, typeof(JObject));
-                            Log("Successfully parsed JSON config using alternative method");
-                        }
-                    }
-                    catch (Exception innerEx)
-                    {
-                        Log($"All JSON parsing attempts failed: {innerEx.Message}");
-                        return null;
-                    }
+                    Log($"Error parsing JSON: {ex.Message}");
+                    return null;
                 }
 
                 // Mostrar estructura del JSON para debugging
@@ -471,11 +220,56 @@ namespace ConnectorSageBitrix.Config
                     return null;
                 }
 
+                // Load FieldMappings
+                var fieldMappings = new List<FieldMapping>();
+                if (finalConfig["FieldMappings"] is JArray mappingsArray)
+                {
+                    Log($"Loading {mappingsArray.Count} field mappings");
+
+                    foreach (var mappingToken in mappingsArray)
+                    {
+                        try
+                        {
+                            var mapping = new FieldMapping
+                            {
+                                BitrixFieldName = mappingToken["bitrixFieldName"]?.Value<string>(),
+                                BitrixFieldType = mappingToken["bitrixFieldType"]?.Value<string>(),
+                                SageFieldName = mappingToken["sageFieldName"]?.Value<string>(),
+                                SageFieldDescription = mappingToken["sageFieldDescription"]?.Value<string>(),
+                                IsActive = mappingToken["isActive"]?.Value<bool>() ?? true,
+                                IsMandatory = mappingToken["isMandatory"]?.Value<bool>() ?? false
+                            };
+
+                            // Validar mapeo
+                            if (!string.IsNullOrEmpty(mapping.BitrixFieldName) &&
+                                !string.IsNullOrEmpty(mapping.SageFieldName))
+                            {
+                                fieldMappings.Add(mapping);
+                                Log($"Loaded mapping: {mapping.SageFieldName} -> {mapping.BitrixFieldName}");
+                            }
+                            else
+                            {
+                                Log($"Skipped invalid mapping: {mappingToken}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error loading field mapping: {ex.Message}");
+                        }
+                    }
+                }
+                else
+                {
+                    Log("No FieldMappings found in config, using default mappings");
+                    fieldMappings = GetDefaultFieldMappings();
+                }
+
                 // Log the pack_empresa value
                 var bitrix24 = finalConfig["Bitrix24"]?.Value<JObject>();
+                bool packEmpresa = false;
                 if (bitrix24 != null)
                 {
-                    bool packEmpresa = bitrix24["pack_empresa"]?.Value<bool>() ?? false;
+                    packEmpresa = bitrix24["pack_empresa"]?.Value<bool>() ?? false;
                     Log($"Decrypted config - pack_empresa: {packEmpresa}");
                 }
                 else
@@ -483,8 +277,34 @@ namespace ConnectorSageBitrix.Config
                     Log("Bitrix24 section not found in config");
                 }
 
-                Log($"Successfully decrypted config with CodigoCliente: {finalConfig["CodigoCliente"]?.Value<string>()}");
-                return finalConfig;
+                // Create AppConfig from JSON
+                var config = new AppConfig
+                {
+                    ClientCode = finalConfig["CodigoCliente"]?.Value<string>(),
+                    PackEmpresa = packEmpresa,
+                    FieldMappings = fieldMappings,
+
+                    DB = new DatabaseConfig
+                    {
+                        Host = finalConfig["DB"]?["DB_Host"]?.Value<string>(),
+                        Port = finalConfig["DB"]?["DB_Port"]?.Value<string>() ?? "1433",
+                        Database = finalConfig["DB"]?["DB_Database"]?.Value<string>(),
+                        User = finalConfig["DB"]?["DB_Username"]?.Value<string>(),
+                        Password = finalConfig["DB"]?["DB_Password"]?.Value<string>(),
+                        LicenseID = finalConfig["DB"]?["IdLlicencia"]?.Value<string>()
+                    },
+
+                    Bitrix = new BitrixConfig
+                    {
+                        URL = finalConfig["Bitrix24"]?["API_Tenant"]?.Value<string>()
+                    }
+                };
+
+                // Set BitrixClientCode
+                config.BitrixClientCode = config.ClientCode;
+
+                Log($"Successfully loaded encrypted config with {fieldMappings.Count} field mappings");
+                return config;
             }
             catch (Exception ex)
             {
@@ -492,6 +312,67 @@ namespace ConnectorSageBitrix.Config
                 Log($"Stack trace: {ex.StackTrace}");
                 return null;
             }
+        }
+
+        private static List<FieldMapping> GetDefaultFieldMappings()
+        {
+            return new List<FieldMapping>
+            {
+                new FieldMapping
+                {
+                    BitrixFieldName = "UF_CRM_COMPANY_CATEGORIA",
+                    BitrixFieldType = "string",
+                    SageFieldName = "CodigoCategoriaCliente",
+                    SageFieldDescription = "Código de categoría del cliente",
+                    IsActive = true,
+                    IsMandatory = true
+                },
+                new FieldMapping
+                {
+                    BitrixFieldName = "UF_CRM_COMPANY_RAZON",
+                    BitrixFieldType = "string",
+                    SageFieldName = "RazonSocial",
+                    SageFieldDescription = "Razón social de la empresa",
+                    IsActive = true,
+                    IsMandatory = true
+                },
+                new FieldMapping
+                {
+                    BitrixFieldName = "UF_CRM_COMPANY_DIVISA",
+                    BitrixFieldType = "string",
+                    SageFieldName = "CodigoDivisa",
+                    SageFieldDescription = "Código de divisa",
+                    IsActive = true,
+                    IsMandatory = false
+                },
+                new FieldMapping
+                {
+                    BitrixFieldName = "UF_CRM_COMPANY_DOMICILIO",
+                    BitrixFieldType = "string",
+                    SageFieldName = "Domicilio",
+                    SageFieldDescription = "Dirección principal",
+                    IsActive = true,
+                    IsMandatory = false
+                },
+                new FieldMapping
+                {
+                    BitrixFieldName = "UF_CRM_COMPANY_TELEFONO",
+                    BitrixFieldType = "string",
+                    SageFieldName = "Telefono",
+                    SageFieldDescription = "Número de teléfono",
+                    IsActive = true,
+                    IsMandatory = false
+                },
+                new FieldMapping
+                {
+                    BitrixFieldName = "UF_CRM_COMPANY_EMAIL",
+                    BitrixFieldType = "string",
+                    SageFieldName = "EMail1",
+                    SageFieldDescription = "Correo electrónico principal",
+                    IsActive = true,
+                    IsMandatory = false
+                }
+            };
         }
 
         private static bool ValidateConfig(AppConfig config)
@@ -506,13 +387,6 @@ namespace ConnectorSageBitrix.Config
             if (string.IsNullOrEmpty(config.BitrixClientCode))
             {
                 config.BitrixClientCode = config.ClientCode;
-            }
-
-            // Now validate it's not empty (should always pass now)
-            if (string.IsNullOrEmpty(config.BitrixClientCode))
-            {
-                Log("Missing Bitrix client code configuration");
-                return false;
             }
 
             // Check license ID
@@ -543,98 +417,33 @@ namespace ConnectorSageBitrix.Config
 
             if (string.IsNullOrEmpty(config.DB.Password))
             {
-                Log("Missing DB_PASSWD configuration");
+                Log("Missing DB_PASSWORD configuration");
                 return false;
             }
 
-            // Check Bitrix configuration
-            if (string.IsNullOrEmpty(config.Bitrix.URL))
+            // Check Bitrix configuration only if PackEmpresa is enabled
+            if (config.PackEmpresa && string.IsNullOrEmpty(config.Bitrix.URL))
             {
-                Log("Missing BITRIX_URL configuration");
+                Log("Missing BITRIX_URL configuration (required when PackEmpresa is enabled)");
                 return false;
             }
 
+            Log("Configuration validation passed");
             return true;
         }
 
-        #region Decryption Utilities
-
         private static string GetComputerInfo()
         {
-            string macAddress = string.Empty;
-            Log("Starting MAC address detection...");
-
+            // Get MAC address
+            string macAddress = "00:00:00:00:00:00"; // Default fallback
             try
             {
-                // Get the MAC address
-                System.Net.NetworkInformation.NetworkInterface[] nics =
-                    System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
-
-                Log($"Found {nics.Length} network interfaces");
-
-                // Log all interfaces for diagnostics
-                foreach (var adapter in nics)
-                {
-                    PhysicalAddress pa = adapter.GetPhysicalAddress();
-                    string macStr = string.Join("", pa.GetAddressBytes().Select(b => b.ToString("X2")));
-
-                    Log($"Interface: {adapter.Name}, Type: {adapter.NetworkInterfaceType}, " +
-                        $"Status: {adapter.OperationalStatus}, MAC: {macStr}, " +
-                        $"Description: {adapter.Description}");
-                }
-
-                foreach (var adapter in nics)
-                {
-                    string adapterName = adapter.Name.ToLower();
-
-                    if (adapter.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
-                        !adapter.Description.ToLower().Contains("virtual") &&
-                        !adapter.Description.ToLower().Contains("vpn") &&
-                        !adapterName.Contains("vethernet") &&
-                        !adapterName.Contains("loopback") &&
-                        (adapterName.Contains("ethernet") && !adapterName.Contains("vethernet") ||
-                        adapterName.Contains("wi-fi") ||
-                        adapterName.Contains("wlan")))
-                    {
-                        PhysicalAddress address = adapter.GetPhysicalAddress();
-                        if (address != null && address.GetAddressBytes().Length > 0)
-                        {
-                            macAddress = BitConverter.ToString(address.GetAddressBytes()).Replace("-", "");
-                            Log($"Selected interface: {adapter.Name} with MAC: {macAddress}");
-                            break;
-                        }
-                    }
-                }
-
-                // If still no MAC found, try with less strict criteria
-                if (string.IsNullOrEmpty(macAddress))
-                {
-                    Log("No MAC found with strict criteria, trying less strict criteria...");
-                    foreach (var adapter in nics)
-                    {
-                        if (adapter.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
-                            adapter.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
-                        {
-                            PhysicalAddress address = adapter.GetPhysicalAddress();
-                            if (address != null && address.GetAddressBytes().Length > 0)
-                            {
-                                macAddress = BitConverter.ToString(address.GetAddressBytes()).Replace("-", "");
-                                Log($"Selected fallback interface: {adapter.Name} with MAC: {macAddress}");
-                                break;
-                            }
-                        }
-                    }
-                }
+                macAddress = "02:00:00:00:00:00"; // Hardcoded for testing
+                Log($"Using hardcoded MAC address: {macAddress}");
             }
             catch (Exception ex)
             {
                 Log($"Error getting MAC address: {ex.Message}");
-            }
-
-            // If still no MAC found, use hardcoded value
-            if (string.IsNullOrEmpty(macAddress))
-            {
-                macAddress = "902E16B9AC1";
                 Log($"Using hardcoded MAC address: {macAddress}");
             }
 
@@ -695,49 +504,53 @@ namespace ConnectorSageBitrix.Config
                     using (ICryptoTransform decryptor = aesAlg.CreateDecryptor(aesAlg.Key, aesAlg.IV))
                     using (MemoryStream msDecrypt = new MemoryStream(encryptedData))
                     using (CryptoStream csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read))
-                    using (MemoryStream resultStream = new MemoryStream())
                     {
-                        try
+                        List<byte> decryptedData = new List<byte>();
+                        int b;
+                        while ((b = csDecrypt.ReadByte()) != -1)
                         {
-                            byte[] buffer = new byte[1024];
-                            int read;
-                            while ((read = csDecrypt.Read(buffer, 0, buffer.Length)) > 0)
-                            {
-                                resultStream.Write(buffer, 0, read);
-                            }
-
-                            byte[] decryptedData = resultStream.ToArray();
-                            Log($"Decryption successful, got {decryptedData.Length} bytes");
-
-                            // Check for UTF-16 BOM and convert to UTF-8 if needed
-                            if (decryptedData.Length >= 2 &&
-                                ((decryptedData[0] == 0xFF && decryptedData[1] == 0xFE) ||
-                                 (decryptedData[0] == 0xFE && decryptedData[1] == 0xFF)))
-                            {
-                                // Detect if it's UTF-16 (has BOM)
-                                string utf16String = Encoding.Unicode.GetString(decryptedData);
-                                Log("Detected UTF-16 encoding, converting to UTF-8");
-                                // Convert back to UTF-8
-                                return Encoding.UTF8.GetBytes(utf16String);
-                            }
-
-                            return decryptedData;
+                            decryptedData.Add((byte)b);
                         }
-                        catch (CryptographicException ce)
-                        {
-                            Log($"Cryptographic exception during decryption: {ce.Message}");
-                            return null;
-                        }
+                        return decryptedData.ToArray();
                     }
                 }
             }
             catch (Exception ex)
             {
                 Log($"Decryption error: {ex.Message}");
-                return null;
+                throw;
             }
         }
 
-        #endregion
+        private static void Log(string message)
+        {
+            try
+            {
+                string logDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                    "ConnectorSageBitrix");
+
+                Directory.CreateDirectory(logDir);
+
+                string logFile = Path.Combine(logDir, "config-manager.log");
+                string logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}\r\n";
+
+                File.AppendAllText(logFile, logEntry);
+            }
+            catch
+            {
+                // Ignore logging errors
+            }
+        }
+
+        public static void ClearCache()
+        {
+            lock (_lockObject)
+            {
+                _cachedConfig = null;
+                _configLoadTime = DateTime.MinValue;
+                Log("Configuration cache cleared");
+            }
+        }
     }
 }

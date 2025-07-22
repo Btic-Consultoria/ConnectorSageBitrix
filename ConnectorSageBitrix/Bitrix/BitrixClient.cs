@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using ConnectorSageBitrix.Logging;
+using System.Linq;
 
 namespace ConnectorSageBitrix.Bitrix
 {
@@ -25,6 +26,233 @@ namespace ConnectorSageBitrix.Bitrix
                 Timeout = TimeSpan.FromSeconds(30)
             };
         }
+
+        #region Companies with Dynamic Field Mapping
+
+        /// <summary>
+        /// Actualiza una empresa en Bitrix24 con campos mapeados dinámicamente
+        /// </summary>
+        public async Task<bool> UpdateCompany(string companyId, Dictionary<string, object> mappedFields)
+        {
+            try
+            {
+                if (mappedFields == null || !mappedFields.Any())
+                {
+                    _logger.Warning($"No mapped fields provided for company {companyId}");
+                    return false;
+                }
+
+                _logger.Info($"Updating Bitrix company {companyId} with mapped fields");
+
+                // Preparar datos para Bitrix24
+                var updateData = new Dictionary<string, object>();
+
+                foreach (var field in mappedFields)
+                {
+                    // Validar y limpiar valores antes de enviar
+                    var cleanValue = CleanFieldValue(field.Value, field.Key);
+                    if (cleanValue != null)
+                    {
+                        updateData[field.Key] = cleanValue;
+                        _logger.Debug($"Adding field {field.Key}: {cleanValue}");
+                    }
+                }
+
+                if (!updateData.Any())
+                {
+                    _logger.Warning($"No valid fields to update for company {companyId}");
+                    return false;
+                }
+
+                // Construir URL de la API
+                string apiUrl = $"{_baseUrl}crm.company.update.json";
+                
+                var requestData = new
+                {
+                    id = companyId,
+                    fields = updateData
+                };
+
+                _logger.Debug($"Sending update request to: {apiUrl}");
+                _logger.Debug($"Request data: {JsonConvert.SerializeObject(requestData, Formatting.Indented)}");
+
+                // Realizar petición HTTP
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                    
+                    var jsonContent = JsonConvert.SerializeObject(requestData);
+                    var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                    var response = await client.PostAsync(apiUrl, content);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var result = JsonConvert.DeserializeObject<dynamic>(responseContent);
+                        
+                        if (result?.result == true)
+                        {
+                            _logger.Info($"Successfully updated company {companyId}");
+                            return true;
+                        }
+                        else
+                        {
+                            _logger.Error($"Bitrix24 returned error: {responseContent}");
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        _logger.Error($"HTTP error updating company {companyId}: {response.StatusCode} - {responseContent}");
+                        return false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Exception updating company {companyId}: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Limpia y valida valores de campos antes de enviarlos a Bitrix24
+        /// </summary>
+        private object CleanFieldValue(object value, string fieldName)
+        {
+            if (value == null)
+                return null;
+
+            try
+            {
+                string stringValue = value.ToString().Trim();
+                
+                if (string.IsNullOrEmpty(stringValue))
+                    return null;
+
+                // Limpiar según el tipo de campo
+                if (fieldName.Contains("EMAIL"))
+                {
+                    // Validar formato de email básico
+                    if (stringValue.Contains("@") && stringValue.Contains("."))
+                        return stringValue.ToLower();
+                    else
+                    {
+                        _logger.Warning($"Invalid email format for {fieldName}: {stringValue}");
+                        return null;
+                    }
+                }
+                else if (fieldName.Contains("TELEFONO"))
+                {
+                    // Limpiar formato de teléfono
+                    string cleanPhone = System.Text.RegularExpressions.Regex.Replace(stringValue, @"[^\d+\-\s\(\)]", "");
+                    return string.IsNullOrEmpty(cleanPhone) ? null : cleanPhone;
+                }
+                else if (fieldName.Contains("DIVISA"))
+                {
+                    // Convertir divisa a mayúsculas
+                    return stringValue.ToUpper();
+                }
+                else
+                {
+                    // Campo de texto general - limitar longitud
+                    const int maxLength = 255;
+                    if (stringValue.Length > maxLength)
+                    {
+                        _logger.Warning($"Truncating field {fieldName} from {stringValue.Length} to {maxLength} characters");
+                        return stringValue.Substring(0, maxLength);
+                    }
+                    return stringValue;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error cleaning field value for {fieldName}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Método de utilidad para probar la conexión con campos mapeados
+        /// </summary>
+        public async Task<bool> TestFieldMappings(Dictionary<string, object> testFields)
+        {
+            try
+            {
+                _logger.Info("Testing field mappings with Bitrix24");
+
+                // Crear empresa de prueba
+                var testCompany = new
+                {
+                    fields = new
+                    {
+                        TITLE = "Test Company for Field Mapping",
+                        COMPANY_TYPE = "OTHER"
+                    }
+                };
+
+                // Crear empresa temporal
+                string apiUrl = $"{_baseUrl}crm.company.add.json";
+                using (var client = new HttpClient())
+                {
+                    var jsonContent = JsonConvert.SerializeObject(testCompany);
+                    var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                    var response = await client.PostAsync(apiUrl, content);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        dynamic result = JsonConvert.DeserializeObject(responseContent);
+                        string companyId = result?.result?.ToString();
+
+                        if (!string.IsNullOrEmpty(companyId))
+                        {
+                            _logger.Info($"Created test company {companyId}");
+
+                            // Probar actualización con campos mapeados
+                            bool updateSuccess = await UpdateCompany(companyId, testFields);
+
+                            // Eliminar empresa de prueba
+                            await DeleteTestCompany(companyId);
+
+                            return updateSuccess;
+                        }
+                    }
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error testing field mappings: {ex.Message}");
+                return false;
+            }
+        }
+
+        private async Task DeleteTestCompany(string companyId)
+        {
+            try
+            {
+                string apiUrl = $"{_baseUrl}crm.company.delete.json";
+                var deleteData = new { id = companyId };
+
+                using (var client = new HttpClient())
+                {
+                    var jsonContent = JsonConvert.SerializeObject(deleteData);
+                    var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                    await client.PostAsync(apiUrl, content);
+                }
+
+                _logger.Info($"Deleted test company {companyId}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not delete test company {companyId}: {ex.Message}");
+            }
+        }
+
+        #endregion
 
         #region Socios
 
@@ -59,7 +287,7 @@ namespace ConnectorSageBitrix.Bitrix
                     ufCrm55Cargo = socio.Cargo,
                     ufCrm55Admin = socio.Administrador,
                     ufCrm55Participacion = socio.Participacion,
-                    ufCrm55RazonSocial = socio.RazonSocialEmpleado // Nuevo campo
+                    ufCrm55RazonSocial = socio.RazonSocialEmpleado
                 },
                 entityTypeId = BitrixConstants.EntityTypeSocios
             };
@@ -100,276 +328,7 @@ namespace ConnectorSageBitrix.Bitrix
 
         #endregion
 
-        #region Cargos
-
-        public async Task<List<BitrixCargo>> ListCargosAsync()
-        {
-            var body = new
-            {
-                entityTypeId = BitrixConstants.EntityTypeCargos
-            };
-
-            _logger.Debug("Requesting cargos list from Bitrix24");
-
-            var response = await DoRequestAsync<BitrixItemListResponse<BitrixCargo>>("crm.item.list", body);
-
-            if (response?.Result?.Items == null)
-            {
-                return new List<BitrixCargo>();
-            }
-
-            _logger.Debug($"Retrieved {response.Result.Items.Count} cargos from Bitrix24");
-            return response.Result.Items;
-        }
-
-        public async Task<int> CreateCargoAsync(BitrixCargo cargo)
-        {
-            var body = new
-            {
-                fields = new
-                {
-                    title = cargo.Title,
-                    ufCrm57Dni = cargo.DNI, // Usar DNI en lugar de GuidPersona
-                    ufCrm57Cargo = cargo.Cargo,
-                    ufCrm57Unico = cargo.SocioUnico,
-                    ufCrm57Caducidad = cargo.Caducidad,
-                    ufCrm57RazonSocial = cargo.RazonSocialEmpleado
-                },
-                entityTypeId = BitrixConstants.EntityTypeCargos
-            };
-
-            _logger.Debug($"Creating cargo with DNI: {cargo.DNI}");
-
-            var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
-
-            int id = response?.Result?.Item?.ID ?? 0;
-            _logger.Debug($"Created cargo with ID: {id}");
-
-            return id;
-        }
-
-        public async Task UpdateCargoAsync(int id, BitrixCargo cargo)
-        {
-            var body = new
-            {
-                id = id,
-                fields = new
-                {
-                    title = cargo.Title,
-                    ufCrm57Dni = cargo.DNI, // Usar DNI en lugar de GuidPersona
-                    ufCrm57Cargo = cargo.Cargo,
-                    ufCrm57Unico = cargo.SocioUnico,
-                    ufCrm57Caducidad = cargo.Caducidad,
-                    ufCrm57RazonSocial = cargo.RazonSocialEmpleado
-                },
-                entityTypeId = BitrixConstants.EntityTypeCargos
-            };
-
-            _logger.Debug($"Updating cargo with ID: {id}");
-
-            await DoRequestAsync<BitrixUpdateResponse>("crm.item.update", body);
-
-            _logger.Debug($"Successfully updated cargo with ID: {id}");
-        }
-
-        #endregion
-
-        #region Actividades
-
-        public async Task<List<BitrixActividad>> ListActividadesAsync()
-        {
-            var body = new
-            {
-                entityTypeId = BitrixConstants.EntityTypeActividades
-            };
-
-            _logger.Debug("Requesting actividades list from Bitrix24");
-
-            var response = await DoRequestAsync<BitrixItemListResponse<BitrixActividad>>("crm.item.list", body);
-
-            if (response?.Result?.Items == null)
-            {
-                return new List<BitrixActividad>();
-            }
-
-            _logger.Debug($"Retrieved {response.Result.Items.Count} actividades from Bitrix24");
-            return response.Result.Items;
-        }
-
-        public async Task<int> CreateActividadAsync(BitrixActividad actividad)
-        {
-            var body = new
-            {
-                fields = new
-                {
-                    title = actividad.Title,
-                    ufCrm59Guidactividad = actividad.GuidActividad,
-                    ufCrm59Descripcion = actividad.Descripcion,
-                    ufCrm_59_CNAE_93 = actividad.CNAE93,
-                    ufCrm59AltaIae = actividad.AltaIAE,
-                    ufCrm59BajaIae = actividad.BajaIAE,
-                    ufCrm59Epigrafe = actividad.Epigrafe,
-                    ufCrm_59_CNAE_09 = actividad.CNAE09,
-                    ufCrm59Sufijo = actividad.Sufijo,
-                    ufCrm59Principal = actividad.Principal,
-                    ufCrm59TipoEpigrafe = actividad.TipoEpigrafe
-                },
-                entityTypeId = BitrixConstants.EntityTypeActividades
-            };
-
-            _logger.Debug($"Creating actividad with GuidActividad: {actividad.GuidActividad}");
-
-            _logger.Debug($"BODY: {body}");
-
-            var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
-
-            int id = response?.Result?.Item?.ID ?? 0;
-            _logger.Debug($"Created actividad with ID: {id}");
-
-            return id;
-        }
-
-        public async Task UpdateActividadAsync(int id, BitrixActividad actividad)
-        {
-            var body = new
-            {
-                id = id,
-                fields = new
-                {
-                    title = actividad.Title,
-                    ufCrm59Guidactividad = actividad.GuidActividad,
-                    ufCrm59Descripcion = actividad.Descripcion,
-                    ufCrm_59_CNAE_93 = actividad.CNAE93,
-                    ufCrm59AltaIae = actividad.AltaIAE,
-                    ufCrm59BajaIae = actividad.BajaIAE,
-                    ufCrm59Epigrafe = actividad.Epigrafe,
-                    ufCrm_59_CNAE_09 = actividad.CNAE09,
-                    ufCrm59Sufijo = actividad.Sufijo,
-                    ufCrm59Principal = actividad.Principal,
-                    ufCrm59TipoEpigrafe = actividad.TipoEpigrafe
-                },
-                entityTypeId = BitrixConstants.EntityTypeActividades
-            };
-
-            _logger.Debug($"Updating actividad with ID: {id}");
-
-            await DoRequestAsync<BitrixUpdateResponse>("crm.item.update", body);
-
-            _logger.Debug($"Successfully updated actividad with ID: {id}");
-        }
-
-        #endregion
-
-        #region Modelos
-
-        public async Task<List<BitrixModelo>> ListModelosAsync()
-        {
-            var body = new
-            {
-                entityTypeId = BitrixConstants.EntityTypeModelos
-            };
-
-            _logger.Debug("Requesting modelos list from Bitrix24");
-
-            var response = await DoRequestAsync<BitrixItemListResponse<BitrixModelo>>("crm.item.list", body);
-
-            if (response?.Result?.Items == null)
-            {
-                return new List<BitrixModelo>();
-            }
-
-            _logger.Debug($"Retrieved {response.Result.Items.Count} modelos from Bitrix24");
-            return response.Result.Items;
-        }
-
-        public async Task<int> CreateModeloAsync(BitrixModelo modelo)
-        {
-            var body = new
-            {
-                fields = new
-                {
-                    title = modelo.Title,
-                    ufCrm133Codigo = modelo.CodigoModeloImp,
-                    ufCrm133Periodicidad = modelo.Periodicidad,
-                    begindate = modelo.FechaInicio,
-                    closedate = modelo.FechaCierre,
-                    ufCrm133Estado = modelo.Estado
-                },
-                entityTypeId = BitrixConstants.EntityTypeModelos
-            };
-
-            _logger.Debug($"Creating modelo with codigo: {modelo.CodigoModeloImp}");
-
-            var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
-
-            int id = response?.Result?.Item?.ID ?? 0;
-            _logger.Debug($"Created modelo with ID: {id}");
-
-            return id;
-        }
-
-        public async Task UpdateModeloAsync(int id, BitrixModelo modelo)
-        {
-            var body = new
-            {
-                id = id,
-                fields = new
-                {
-                    title = modelo.Title,
-                    ufCrm133Codigo = modelo.CodigoModeloImp,
-                    ufCrm133Periodicidad = modelo.Periodicidad,
-                    begindate = modelo.FechaInicio,
-                    closedate = modelo.FechaCierre,
-                    ufCrm133Estado = modelo.Estado
-                },
-                entityTypeId = BitrixConstants.EntityTypeModelos
-            };
-
-            _logger.Debug($"Updating modelo with ID: {id}");
-
-            await DoRequestAsync<BitrixUpdateResponse>("crm.item.update", body);
-
-            _logger.Debug($"Successfully updated modelo with ID: {id}");
-        }
-
-        #endregion
-
-        #region Helper Methods
-
-        private async Task<T> DoRequestAsync<T>(string method, object body)
-        {
-            string url = $"{_baseUrl}{method}";
-            _logger.Debug($"Making request to: {url}");
-
-            string jsonBody = JsonConvert.SerializeObject(body);
-            _logger.Debug($"Request body: {jsonBody}");
-            StringContent content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-
-            HttpResponseMessage response = await _httpClient.PostAsync(url, content);
-            string responseContent = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new HttpRequestException($"Invalid status code: {response.StatusCode}, body: {responseContent}");
-            }
-
-            if (string.IsNullOrEmpty(responseContent) || responseContent == "[]")
-            {
-                _logger.Debug("Received empty response");
-                return default;
-            }
-
-            return JsonConvert.DeserializeObject<T>(responseContent);
-        }
-
-        public void Dispose()
-        {
-            _httpClient?.Dispose();
-        }
-
-        #endregion
-
-        #region Companies
+        #region Companies (Legacy)
 
         public async Task<List<BitrixCompany>> ListCompaniesAsync()
         {
@@ -457,80 +416,37 @@ namespace ConnectorSageBitrix.Bitrix
 
         #endregion
 
-        #region Products
+        #region Helper Methods
 
-        public async Task<List<BitrixProduct>> ListProductsAsync()
+        private async Task<T> DoRequestAsync<T>(string method, object body)
         {
-            var body = new
+            string url = $"{_baseUrl}{method}";
+            _logger.Debug($"Making request to: {url}");
+
+            string jsonBody = JsonConvert.SerializeObject(body);
+            _logger.Debug($"Request body: {jsonBody}");
+            StringContent content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await _httpClient.PostAsync(url, content);
+            string responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
             {
-                entityTypeId = BitrixConstants.EntityTypeProducts
-            };
-
-            _logger.Debug("Requesting products list from Bitrix24");
-
-            var response = await DoRequestAsync<BitrixItemListResponse<BitrixProduct>>("crm.item.list", body);
-
-            if (response?.Result?.Items == null)
-            {
-                return new List<BitrixProduct>();
+                throw new HttpRequestException($"Invalid status code: {response.StatusCode}, body: {responseContent}");
             }
 
-            _logger.Debug($"Retrieved {response.Result.Items.Count} products from Bitrix24");
-            return response.Result.Items;
+            if (string.IsNullOrEmpty(responseContent) || responseContent == "[]")
+            {
+                _logger.Debug("Received empty response");
+                return default(T);
+            }
+
+            return JsonConvert.DeserializeObject<T>(responseContent);
         }
 
-        public async Task<int> CreateProductAsync(BitrixProduct product)
+        public void Dispose()
         {
-            var body = new
-            {
-                fields = new
-                {
-                    title = product.Title,
-                    ufCrmProductCodigo = product.CodigoArticulo,
-                    ufCrmProductDescripcion = product.DescripcionArticulo,
-                    ufCrmProductObsoleto = product.ObsoletoLc,
-                    ufCrmProductLinea = product.DescripcionLinea,
-                    ufCrmProductPrecio = product.PrecioVenta,
-                    ufCrmProductDivisa = product.CodigoDivisa,
-                    ufCrmProductIvaIncluido = product.IvaIncluido
-                },
-                entityTypeId = BitrixConstants.EntityTypeProducts
-            };
-
-            _logger.Debug($"Creating product with codigo: {product.CodigoArticulo}");
-
-            var response = await DoRequestAsync<BitrixItemAddResponse>("crm.item.add", body);
-
-            int id = response?.Result?.Item?.ID ?? 0;
-            _logger.Debug($"Created product with ID: {id}");
-
-            return id;
-        }
-
-        public async Task UpdateProductAsync(int id, BitrixProduct product)
-        {
-            var body = new
-            {
-                id = id,
-                fields = new
-                {
-                    title = product.Title,
-                    ufCrmProductCodigo = product.CodigoArticulo,
-                    ufCrmProductDescripcion = product.DescripcionArticulo,
-                    ufCrmProductObsoleto = product.ObsoletoLc,
-                    ufCrmProductLinea = product.DescripcionLinea,
-                    ufCrmProductPrecio = product.PrecioVenta,
-                    ufCrmProductDivisa = product.CodigoDivisa,
-                    ufCrmProductIvaIncluido = product.IvaIncluido
-                },
-                entityTypeId = BitrixConstants.EntityTypeProducts
-            };
-
-            _logger.Debug($"Updating product with ID: {id}");
-
-            await DoRequestAsync<BitrixUpdateResponse>("crm.item.update", body);
-
-            _logger.Debug($"Successfully updated product with ID: {id}");
+            _httpClient?.Dispose();
         }
 
         #endregion
@@ -581,6 +497,61 @@ namespace ConnectorSageBitrix.Bitrix
     {
         [JsonProperty("success")]
         public bool Success { get; set; }
+    }
+
+    #endregion
+
+    #region Entity Classes
+
+    public class BitrixSocio
+    {
+        public string Title { get; set; }
+        public string DNI { get; set; }
+        public string Cargo { get; set; }
+        public string Administrador { get; set; }
+        public decimal Participacion { get; set; }
+        public string RazonSocialEmpleado { get; set; }
+    }
+
+    public class BitrixCompany
+    {
+        public string Title { get; set; }
+        public string CodigoCategoriaCliente { get; set; }
+        public string RazonSocial { get; set; }
+        public string CodigoDivisa { get; set; }
+        public string Domicilio { get; set; }
+        public string Domicilio2 { get; set; }
+        public string Municipio { get; set; }
+        public string CodigoPostal { get; set; }
+        public string Provincia { get; set; }
+        public string Nacion { get; set; }
+        public string CodigoNacion { get; set; }
+        public string Telefono { get; set; }
+        public string EMail1 { get; set; }
+    }
+
+    public class BitrixProduct
+    {
+        public string Title { get; set; }
+        public string CodigoArticulo { get; set; }
+        public string DescripcionArticulo { get; set; }
+        public string ObsoletoLc { get; set; }
+        public string DescripcionLinea { get; set; }
+        public decimal PrecioVenta { get; set; }
+        public string CodigoDivisa { get; set; }
+        public bool IvaIncluido { get; set; }
+    }
+
+    #endregion
+
+    #region Constants
+
+    public static class BitrixConstants
+    {
+        public const int EntityTypeSocios = 55;
+        public const int EntityTypeCompanies = 133;
+        public const int EntityTypeProducts = 184;
+        public const int EntityTypeModelos = 186;
     }
 
     #endregion
