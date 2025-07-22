@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using ConnectorSageBitrix.Logging;
@@ -45,7 +45,7 @@ namespace ConnectorSageBitrix.Models
         {
             try
             {
-                var mapping = _mappings.Find(m => 
+                var mapping = _mappings.Find(m =>
                     m.BitrixFieldName == bitrixFieldName && m.IsActive);
 
                 if (mapping == null)
@@ -63,7 +63,7 @@ namespace ConnectorSageBitrix.Models
 
                 if (mapping.IsMandatory)
                 {
-                    _logger.Warning($"Mandatory field {mapping.SageFieldName} not found in Sage data");
+                    _logger.Error($"Mandatory field {mapping.SageFieldName} not found in Sage data");
                 }
 
                 return null;
@@ -91,7 +91,7 @@ namespace ConnectorSageBitrix.Models
                 }
                 else if (mapping.IsMandatory)
                 {
-                    _logger.Warning($"Mandatory mapping failed: {mapping.BitrixFieldName} <- {mapping.SageFieldName}");
+                    _logger.Error($"Mandatory mapping failed: {mapping.BitrixFieldName} <- {mapping.SageFieldName}");
                 }
             }
 
@@ -112,13 +112,37 @@ namespace ConnectorSageBitrix.Models
         public List<string> ValidateMandatoryMappings()
         {
             var missingFields = new List<string>();
-            
+
             foreach (var mapping in _mappings.Where(m => m.IsMandatory && m.IsActive))
             {
                 _logger.Info($"Validated mandatory mapping: {mapping.BitrixFieldName}");
             }
 
             return missingFields;
+        }
+
+        /// <summary>
+        /// Obtiene el número total de mapeos
+        /// </summary>
+        public int GetTotalMappingsCount()
+        {
+            return _mappings.Count;
+        }
+
+        /// <summary>
+        /// Obtiene el número de mapeos activos
+        /// </summary>
+        public int GetActiveMappingsCount()
+        {
+            return _mappings.Count(m => m.IsActive);
+        }
+
+        /// <summary>
+        /// Obtiene el número de mapeos obligatorios
+        /// </summary>
+        public int GetMandatoryMappingsCount()
+        {
+            return _mappings.Count(m => m.IsMandatory && m.IsActive);
         }
     }
 }

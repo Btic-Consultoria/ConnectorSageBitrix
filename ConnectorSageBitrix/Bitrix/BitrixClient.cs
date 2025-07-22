@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using ConnectorSageBitrix.Logging;
+using ConnectorSageBitrix.Extensions;
 using System.Linq;
 
 namespace ConnectorSageBitrix.Bitrix
@@ -497,61 +498,6 @@ namespace ConnectorSageBitrix.Bitrix
     {
         [JsonProperty("success")]
         public bool Success { get; set; }
-    }
-
-    #endregion
-
-    #region Entity Classes
-
-    public class BitrixSocio
-    {
-        public string Title { get; set; }
-        public string DNI { get; set; }
-        public string Cargo { get; set; }
-        public string Administrador { get; set; }
-        public decimal Participacion { get; set; }
-        public string RazonSocialEmpleado { get; set; }
-    }
-
-    public class BitrixCompany
-    {
-        public string Title { get; set; }
-        public string CodigoCategoriaCliente { get; set; }
-        public string RazonSocial { get; set; }
-        public string CodigoDivisa { get; set; }
-        public string Domicilio { get; set; }
-        public string Domicilio2 { get; set; }
-        public string Municipio { get; set; }
-        public string CodigoPostal { get; set; }
-        public string Provincia { get; set; }
-        public string Nacion { get; set; }
-        public string CodigoNacion { get; set; }
-        public string Telefono { get; set; }
-        public string EMail1 { get; set; }
-    }
-
-    public class BitrixProduct
-    {
-        public string Title { get; set; }
-        public string CodigoArticulo { get; set; }
-        public string DescripcionArticulo { get; set; }
-        public string ObsoletoLc { get; set; }
-        public string DescripcionLinea { get; set; }
-        public decimal PrecioVenta { get; set; }
-        public string CodigoDivisa { get; set; }
-        public bool IvaIncluido { get; set; }
-    }
-
-    #endregion
-
-    #region Constants
-
-    public static class BitrixConstants
-    {
-        public const int EntityTypeSocios = 55;
-        public const int EntityTypeCompanies = 133;
-        public const int EntityTypeProducts = 184;
-        public const int EntityTypeModelos = 186;
     }
 
     #endregion

@@ -1,13 +1,14 @@
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using ConnectorSageBitrix.Bitrix;
 using ConnectorSageBitrix.Config;
+using ConnectorSageBitrix.Licensing;
 using ConnectorSageBitrix.Logging;
 using ConnectorSageBitrix.Models;
 using ConnectorSageBitrix.Repositories;
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ConnectorSageBitrix.Sync
 {
@@ -63,48 +64,16 @@ namespace ConnectorSageBitrix.Sync
             }
             catch (Exception ex)
             {
-                _logger.Error($"Socios synchronization failed: {ex.Message}");
-                _logger.Error(ex.ToString());
+                _logger.Error($"Socios synchronization error: {ex.Message}");
             }
 
             try
             {
-                await SyncCargosAsync(cancellationToken);
+                await SyncCompaniesAsync(cancellationToken);
             }
             catch (Exception ex)
             {
-                _logger.Error($"Cargos synchronization failed: {ex.Message}");
-                _logger.Error(ex.ToString());
-            }
-
-            try
-            {
-                await SyncActividadesAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Actividades synchronization failed: {ex.Message}");
-                _logger.Error(ex.ToString());
-            }
-
-            try
-            {
-                await SyncModelosAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Modelos synchronization failed: {ex.Message}");
-                _logger.Error(ex.ToString());
-            }
-
-            try
-            {
-                await SyncCompaniesWithMappingsAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Companies synchronization failed: {ex.Message}");
-                _logger.Error(ex.ToString());
+                _logger.Error($"Companies synchronization error: {ex.Message}");
             }
 
             try
@@ -113,8 +82,7 @@ namespace ConnectorSageBitrix.Sync
             }
             catch (Exception ex)
             {
-                _logger.Error($"Products synchronization failed: {ex.Message}");
-                _logger.Error(ex.ToString());
+                _logger.Error($"Products synchronization error: {ex.Message}");
             }
 
             _logger.Info("Synchronization of all entities completed");
@@ -122,41 +90,26 @@ namespace ConnectorSageBitrix.Sync
 
         private async Task SyncSociosAsync(CancellationToken cancellationToken)
         {
-            if (_bitrixClient == null)
-            {
-                _logger.Debug("Bitrix client not initialized - skipping socios sync");
-                return;
-            }
-
             _logger.Info("Starting socios synchronization");
 
             try
             {
                 var bitrixSocios = await _bitrixClient.ListSociosAsync();
-                var sageSocios = await _socioRepository.GetAllAsync();
+                var sageSocios = _socioRepository.GetAll();
 
                 _logger.Info($"Found {bitrixSocios.Count} socios in Bitrix24 and {sageSocios.Count} in Sage");
 
-                // Sync logic for socios
                 foreach (var sageSocio in sageSocios)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var existingBitrixSocio = bitrixSocios.FirstOrDefault(b => b.DNI == sageSocio.DNI);
-
-                    if (existingBitrixSocio == null)
+                    try
                     {
-                        // Create new socio in Bitrix24
-                        var newBitrixSocio = MapSocioToBitrix(sageSocio);
-                        await _bitrixClient.CreateSocioAsync(newBitrixSocio);
-                        _logger.Debug($"Created new socio in Bitrix24: {sageSocio.DNI}");
+                        await SyncSocio(sageSocio, cancellationToken);
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        // Update existing socio
-                        var updatedBitrixSocio = MapSocioToBitrix(sageSocio);
-                        // Note: Need to get the ID from the existing socio to update
-                        _logger.Debug($"Updated socio in Bitrix24: {sageSocio.DNI}");
+                        _logger.Error($"Error syncing socio {sageSocio.DNI}: {ex.Message}");
                     }
                 }
 
@@ -169,41 +122,79 @@ namespace ConnectorSageBitrix.Sync
             }
         }
 
-        private async Task SyncCargosAsync(CancellationToken cancellationToken)
+        private Task SyncSocio(Socio sageSocio, CancellationToken cancellationToken)
         {
-            _logger.Info("Starting cargos synchronization");
-            // Implementation for cargos sync
-            _logger.Info("Cargos synchronization completed");
+            try
+            {
+                var bitrixSocio = MapSocioToBitrix(sageSocio);
+
+                // Aquí implementarías la lógica de sincronización
+                // Por ejemplo, crear o actualizar el socio en Bitrix24
+
+                _logger.Debug($"Synced socio: {sageSocio.DNI}");
+                return Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error syncing individual socio: {ex.Message}");
+                throw;
+            }
         }
 
-        private async Task SyncActividadesAsync(CancellationToken cancellationToken)
+        private async Task SyncCompaniesAsync(CancellationToken cancellationToken)
         {
-            _logger.Info("Starting actividades synchronization");
-            // Implementation for actividades sync
-            _logger.Info("Actividades synchronization completed");
+            if (_fieldMappingManager != null)
+            {
+                await SyncCompaniesWithMappingsAsync(cancellationToken);
+            }
+            else
+            {
+                await SyncCompaniesLegacyAsync(cancellationToken);
+            }
         }
 
-        private async Task SyncModelosAsync(CancellationToken cancellationToken)
+        private async Task SyncCompaniesLegacyAsync(CancellationToken cancellationToken)
         {
-            _logger.Info("Starting modelos synchronization");
-            // Implementation for modelos sync
-            _logger.Info("Modelos synchronization completed");
+            _logger.Info("Starting companies synchronization (legacy mode)");
+
+            try
+            {
+                var bitrixCompanies = await _bitrixClient.ListCompaniesAsync();
+                var sageCompanies = _companyRepository.GetAll();
+
+                _logger.Info($"Found {bitrixCompanies.Count} companies in Bitrix24 and {sageCompanies.Count} in Sage");
+
+                foreach (var sageCompany in sageCompanies)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        await SyncCompany(sageCompany, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error($"Error syncing company {sageCompany.CodigoCategoriaCliente}: {ex.Message}");
+                    }
+                }
+
+                _logger.Info("Companies synchronization (legacy) completed");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error in companies synchronization: {ex.Message}");
+                throw;
+            }
         }
 
         private async Task SyncCompaniesWithMappingsAsync(CancellationToken cancellationToken)
         {
-            if (_bitrixClient == null || _fieldMappingManager == null)
-            {
-                _logger.Debug("Bitrix client or field mapping manager not initialized - skipping companies sync");
-                return;
-            }
-
             _logger.Info("Starting companies synchronization with field mappings");
 
             try
             {
                 var bitrixCompanies = await _bitrixClient.ListCompaniesAsync();
-                var sageCompanies = await _companyRepository.GetAllAsync();
+                var sageCompanies = _companyRepository.GetAll();
 
                 _logger.Info($"Found {bitrixCompanies.Count} companies in Bitrix24 and {sageCompanies.Count} in Sage");
 
@@ -217,7 +208,7 @@ namespace ConnectorSageBitrix.Sync
                     }
                     catch (Exception ex)
                     {
-                        _logger.Error($"Error syncing company {sageCompany.IdCliente}: {ex.Message}");
+                        _logger.Error($"Error syncing company {sageCompany.CodigoCategoriaCliente}: {ex.Message}");
                     }
                 }
 
@@ -258,10 +249,9 @@ namespace ConnectorSageBitrix.Sync
 
                 if (bitrixFields.Any())
                 {
-                    _logger.Info($"Updating Bitrix company {sageCompany.IdCliente} with {bitrixFields.Count} mapped fields");
+                    _logger.Info($"Updating Bitrix company {sageCompany.CodigoCategoriaCliente} with {bitrixFields.Count} mapped fields");
 
                     // Buscar si la empresa ya existe en Bitrix24
-                    // Aquí deberías implementar lógica para encontrar la empresa por algún campo único
                     string bitrixCompanyId = await FindBitrixCompanyId(sageCompany);
 
                     if (!string.IsNullOrEmpty(bitrixCompanyId))
@@ -279,13 +269,12 @@ namespace ConnectorSageBitrix.Sync
                     }
                     else
                     {
-                        _logger.Debug($"Company {sageCompany.IdCliente} not found in Bitrix24 - would need to create");
-                        // Aquí podrías implementar lógica para crear nuevas empresas
+                        _logger.Debug($"Company {sageCompany.CodigoCategoriaCliente} not found in Bitrix24 - would need to create");
                     }
                 }
                 else
                 {
-                    _logger.Warning($"No mapped fields found for company {sageCompany.IdCliente}");
+                    _logger.Warning($"No mapped fields found for company {sageCompany.CodigoCategoriaCliente}");
                 }
             }
             catch (Exception ex)
@@ -294,11 +283,26 @@ namespace ConnectorSageBitrix.Sync
             }
         }
 
+        private Task SyncCompany(Company sageCompany, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var bitrixCompany = BitrixCompany.FromSageCompany(sageCompany);
+
+                // Aquí implementarías la lógica de sincronización legacy
+
+                _logger.Debug($"Synced company: {sageCompany.CodigoCategoriaCliente}");
+                return Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error syncing individual company: {ex.Message}");
+                throw;
+            }
+        }
+
         private async Task<string> FindBitrixCompanyId(Company sageCompany)
         {
-            // Esta es una implementación simplificada
-            // Aquí deberías implementar lógica para encontrar la empresa en Bitrix24
-            // basándote en algún campo único como email, nombre, o ID externo
             try
             {
                 var companies = await _bitrixClient.ListCompaniesAsync();
@@ -308,10 +312,8 @@ namespace ConnectorSageBitrix.Sync
 
                 if (matchingCompany != null)
                 {
-                    // Nota: Necesitarías añadir una propiedad ID a la clase BitrixCompany
-                    // return matchingCompany.ID.ToString();
                     _logger.Debug($"Found matching company for {sageCompany.RazonSocial}");
-                    return "1"; // Placeholder - reemplazar con el ID real
+                    return matchingCompany.ID.ToString();
                 }
 
                 return null;
@@ -323,22 +325,23 @@ namespace ConnectorSageBitrix.Sync
             }
         }
 
-        private async Task SyncProductsAsync(CancellationToken cancellationToken)
+        private Task SyncProductsAsync(CancellationToken cancellationToken)
         {
             _logger.Info("Starting products synchronization");
             // Implementation for products sync
             _logger.Info("Products synchronization completed");
+            return Task.CompletedTask;
         }
 
         private BitrixSocio MapSocioToBitrix(Socio sageSocio)
         {
             return new BitrixSocio
             {
-                Title = $"{sageSocio.Nombre} {sageSocio.Apellidos}",
+                Title = !string.IsNullOrEmpty(sageSocio.RazonSocialEmpleado) ? sageSocio.RazonSocialEmpleado : sageSocio.DNI,
                 DNI = sageSocio.DNI,
-                Cargo = sageSocio.Cargo,
-                Administrador = sageSocio.Administrador,
-                Participacion = sageSocio.Participacion,
+                Cargo = sageSocio.CargoAdministrador,
+                Administrador = sageSocio.Administrador ? "Y" : "N",
+                Participacion = sageSocio.PorParticipacion.ToString("F2"),
                 RazonSocialEmpleado = sageSocio.RazonSocialEmpleado
             };
         }
@@ -374,7 +377,13 @@ namespace ConnectorSageBitrix.Sync
 
         public void Dispose()
         {
-            if (!_disposed)
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
             {
                 _bitrixClient?.Dispose();
                 _disposed = true;

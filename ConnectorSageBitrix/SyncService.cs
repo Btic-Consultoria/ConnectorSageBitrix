@@ -10,11 +10,9 @@ using ConnectorSageBitrix.Database;
 using ConnectorSageBitrix.Bitrix;
 using ConnectorSageBitrix.Repositories;
 using ConnectorSageBitrix.Models;
-using System.ComponentModel;
-using MyLicenseManager = ConnectorSageBitrix.Licensing.LicenseManager;
-using Timer = System.Timers.Timer;
 using System.IO;
 using System.Diagnostics;
+using Timer = System.Timers.Timer;
 
 namespace ConnectorSageBitrix
 {
@@ -24,19 +22,18 @@ namespace ConnectorSageBitrix
         private AppConfig _config;
         private SyncManager _syncManager;
         private FieldMappingManager _fieldMappingManager;
-        private System.Timers.Timer _timer;
+        private Timer _timer;
         private CancellationTokenSource _cancellationTokenSource;
         private DatabaseManager _databaseManager;
         private bool _isRunning = false;
-        private readonly int _startupTimeoutMs = 20000; // 20 segundos máximo para iniciar
 
         public SyncService()
         {
             InitializeComponent();
-            this.ServiceName = "ConnectorSageBitrix";
-            this.CanStop = true;
-            this.CanPauseAndContinue = false;
-            this.AutoLog = true;
+            ServiceName = "ConnectorSageBitrix";
+            CanStop = true;
+            CanPauseAndContinue = false;
+            AutoLog = true;
         }
 
         protected override void OnStart(string[] args)
@@ -64,11 +61,11 @@ namespace ConnectorSageBitrix
             catch { /* Ignorar errores de archivo */ }
 
             // Iniciar servicio en un hilo separado para evitar el timeout
-            Thread startThread = new Thread(() =>
+            var startThread = new Thread(() =>
             {
                 try
                 {
-                    StartService(args);
+                    StartService();
                 }
                 catch (Exception ex)
                 {
@@ -102,7 +99,7 @@ namespace ConnectorSageBitrix
             StopService();
         }
 
-        public void StartService(string[] args)
+        public void StartService()
         {
             string diagFile = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -161,7 +158,8 @@ namespace ConnectorSageBitrix
                 File.AppendAllText(diagFile, $"{DateTime.Now}: FieldMappingManager inicializado\r\n");
 
                 // Validate license
-                if (!MyLicenseManager.ValidateLicense(_config.DB.LicenseID, _config.ClientCode))
+                var licenseManager = new ConnectorSageBitrix.Licensing.LicenseManager(_config.ClientCode, _config.DB.LicenseID, _logger);
+                if (!licenseManager.IsValid())
                 {
                     throw new Exception("Licencia inválida o expirada");
                 }
@@ -170,11 +168,7 @@ namespace ConnectorSageBitrix
                 File.AppendAllText(diagFile, $"{DateTime.Now}: Licencia validada\r\n");
 
                 // Initialize database manager
-                _databaseManager = new DatabaseManager(_config.DB.ConnectionString, _logger);
-                if (!_databaseManager.TestConnection())
-                {
-                    throw new Exception("No se pudo conectar a la base de datos");
-                }
+                _databaseManager = new DatabaseManager(_config, _logger);
 
                 _logger.Info("Database connection established");
                 File.AppendAllText(diagFile, $"{DateTime.Now}: Base de datos conectada\r\n");
@@ -245,7 +239,8 @@ namespace ConnectorSageBitrix
                     }
                     catch (Exception syncEx)
                     {
-                        _logger.Error($"Initial sync error: {syncEx.Message}");
+                        if (_logger != null)
+                            _logger.Error($"Initial sync error: {syncEx.Message}");
                         File.AppendAllText(diagFile, $"{DateTime.Now}: ERROR en sincronización inicial: {syncEx.Message}\r\n");
                     }
                 });
@@ -284,14 +279,10 @@ namespace ConnectorSageBitrix
                 }
 
                 if (_syncManager != null)
-                {
                     _syncManager.Dispose();
-                }
 
                 if (_databaseManager != null)
-                {
                     _databaseManager.Close();
-                }
 
                 if (_logger != null)
                 {
@@ -302,9 +293,7 @@ namespace ConnectorSageBitrix
             catch (Exception ex)
             {
                 if (_logger != null)
-                {
                     _logger.Error($"Error stopping service: {ex.Message}");
-                }
             }
         }
 

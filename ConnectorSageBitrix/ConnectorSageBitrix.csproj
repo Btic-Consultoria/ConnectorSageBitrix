@@ -12,6 +12,8 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
+    <!-- AÑADIR ESTA LÍNEA PARA USAR C# 11.0 -->
+    <LangVersion>11.0</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -60,11 +62,13 @@
     <Compile Include="Config\AppConfig.cs" />
     <Compile Include="Config\ConfigManager.cs" />
     <Compile Include="Database\DatabaseManager.cs" />
+    <Compile Include="Extensions\LoggerExtensions.cs" />
     <Compile Include="Licensing\LicenseManager.cs" />
     <Compile Include="Logging\Logger.cs" />
     <Compile Include="Models\Actividad.cs" />
     <Compile Include="Models\Cargo.cs" />
     <Compile Include="Models\Company.cs" />
+    <Compile Include="Models\FieldMapping.cs" />
     <Compile Include="Models\Modelo.cs" />
     <Compile Include="Models\Product.cs" />
     <Compile Include="Models\Socio.cs" />
