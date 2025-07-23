@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ConnectorSageBitrix.Logging;
+using ConnectorSageBitrix.Extensions;
 using ConnectorSageBitrix.Models;
 
 namespace ConnectorSageBitrix.Mapping
