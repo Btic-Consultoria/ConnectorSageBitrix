@@ -23,7 +23,7 @@ namespace ConnectorSageBitrix
 
                 // Create and run service in console mode
                 SyncService service = new SyncService();
-                service.StartService(args);
+                service.StartService();
 
                 Console.WriteLine("Press any key to stop the service...");
                 Console.ReadKey();

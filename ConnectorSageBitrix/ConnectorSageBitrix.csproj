@@ -65,6 +65,7 @@
     <Compile Include="Extensions\LoggerExtensions.cs" />
     <Compile Include="Licensing\LicenseManager.cs" />
     <Compile Include="Logging\Logger.cs" />
+    <Compile Include="Mapping\DynamicFieldMapper.cs" />
     <Compile Include="Models\Actividad.cs" />
     <Compile Include="Models\Cargo.cs" />
     <Compile Include="Models\Company.cs" />

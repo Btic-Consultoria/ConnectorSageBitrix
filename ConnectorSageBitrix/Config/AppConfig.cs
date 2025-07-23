@@ -12,6 +12,9 @@ namespace ConnectorSageBitrix.Config
 
         public string BitrixClientCode { get; set; }
 
+        // ⭐ NUEVA PROPIEDAD: Código de empresa Sage
+        public string EmpresaSage { get; set; }
+
         // Database settings
         public DatabaseConfig DB { get; set; }
 
@@ -38,6 +41,9 @@ namespace ConnectorSageBitrix.Config
             Sync = new SyncConfig();
             App = new AppSettings();
             FieldMappings = new List<FieldMapping>();
+
+            // ⭐ NUEVO: Valor por defecto para EmpresaSage
+            EmpresaSage = "1";
 
             // Default sync settings
             Sync.Interval = TimeSpan.FromMinutes(5);

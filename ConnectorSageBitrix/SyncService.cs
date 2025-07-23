@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ConnectorSageBitrix.Config;
 using ConnectorSageBitrix.Logging;
+using ConnectorSageBitrix.Extensions;
 using ConnectorSageBitrix.Sync;
 using ConnectorSageBitrix.Licensing;
 using ConnectorSageBitrix.Database;
@@ -173,15 +174,48 @@ namespace ConnectorSageBitrix
                 _logger.Info("Database connection established");
                 File.AppendAllText(diagFile, $"{DateTime.Now}: Base de datos conectada\r\n");
 
-                // Initialize repositories
+                // Obtener EmpresaSage de la configuración (por defecto "1")
+                string empresaSage = _config.EmpresaSage ?? "1";
+                _logger.Info($"Using EmpresaSage: {empresaSage}");
+
+                // Initialize repositories with EmpresaSage
                 var socioRepository = new SocioRepository(_databaseManager, _logger);
                 var cargoRepository = new CargoRepository(_databaseManager, _logger);
                 var actividadRepository = new ActividadRepository(_databaseManager, _logger);
                 var modeloRepository = new ModeloRepository(_databaseManager, _logger);
-                var companyRepository = new CompanyRepository(_databaseManager, _logger);
+                var companyRepository = new CompanyRepository(_databaseManager, _logger, empresaSage);
                 var productRepository = new ProductRepository(_databaseManager, _logger);
 
-                File.AppendAllText(diagFile, $"{DateTime.Now}: Repositorios creados\r\n");
+                File.AppendAllText(diagFile, $"{DateTime.Now}: Repositorios creados con EmpresaSage: {empresaSage}\r\n");
+
+                // Realizar introspección de campos disponibles
+                try
+                {
+                    _logger.Info("Performing database field introspection...");
+                    var availableFields = companyRepository.GetAvailableFields();
+                    _logger.Info($"Database introspection found {availableFields.Count} available fields in Clientes table");
+
+                    // Log algunos campos importantes para debug
+                    var importantFields = new[] { "CodigoCategoriaCliente_", "RazonSocial", "EMail1", "Telefono", "CodigoDivisa" };
+                    foreach (var field in importantFields)
+                    {
+                        if (availableFields.ContainsKey(field))
+                        {
+                            _logger.Debug($"✅ Found important field: {field} ({availableFields[field].Name})");
+                        }
+                        else
+                        {
+                            _logger.Warning($"❌ Missing important field: {field}");
+                        }
+                    }
+
+                    File.AppendAllText(diagFile, $"{DateTime.Now}: Introspección de BD completada - {availableFields.Count} campos\r\n");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Could not perform database introspection: {ex.Message}");
+                    File.AppendAllText(diagFile, $"{DateTime.Now}: Error en introspección: {ex.Message}\r\n");
+                }
 
                 // Initialize Bitrix client
                 BitrixClient bitrixClient = null;
