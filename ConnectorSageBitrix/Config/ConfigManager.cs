@@ -88,7 +88,7 @@ namespace ConnectorSageBitrix.Config
                     },
 
                     // Load default field mappings for App.config
-                    FieldMappings = GetDefaultFieldMappings()
+                    FieldMappings = LoadFieldMappingsFromAppConfig()
                 };
 
                 Log("Configuration loaded from App.config");
@@ -98,6 +98,70 @@ namespace ConnectorSageBitrix.Config
             {
                 Log($"Error loading App.config: {ex.Message}");
                 return null;
+            }
+        }
+
+        private static List<FieldMapping> LoadFieldMappingsFromAppConfig()
+        {
+            try
+            {
+                var fieldMappingsJson = ConfigurationManager.AppSettings["FIELD_MAPPINGS"];
+
+                if (string.IsNullOrEmpty(fieldMappingsJson))
+                {
+                    Log("No FIELD_MAPPINGS found in App.config, using default mappings");
+                    return GetDefaultFieldMappings();
+                }
+
+                Log("Loading field mappings from App.config");
+                var mappingsArray = JsonConvert.DeserializeObject<JArray>(fieldMappingsJson);
+                var fieldMappings = new List<FieldMapping>();
+
+                foreach (var mappingToken in mappingsArray)
+                {
+                    try
+                    {
+                        var mapping = new FieldMapping
+                        {
+                            BitrixFieldName = mappingToken["BitrixFieldName"]?.Value<string>(),
+                            BitrixFieldType = mappingToken["BitrixFieldType"]?.Value<string>() ?? "string",
+                            SageFieldName = mappingToken["SageFieldName"]?.Value<string>(),
+                            SageFieldDescription = mappingToken["SageFieldDescription"]?.Value<string>() ?? "",
+                            IsActive = mappingToken["IsActive"]?.Value<bool>() ?? true,
+                            IsMandatory = mappingToken["IsMandatory"]?.Value<bool>() ?? false
+                        };
+
+                        // Validar mapeo
+                        if (!string.IsNullOrEmpty(mapping.BitrixFieldName) &&
+                            !string.IsNullOrEmpty(mapping.SageFieldName))
+                        {
+                            fieldMappings.Add(mapping);
+                            Log($"Loaded mapping from App.config: {mapping.SageFieldName} -> {mapping.BitrixFieldName}");
+                        }
+                        else
+                        {
+                            Log($"Skipped invalid mapping from App.config: {mappingToken}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Error loading field mapping from App.config: {ex.Message}");
+                    }
+                }
+
+                if (fieldMappings.Count == 0)
+                {
+                    Log("No valid mappings loaded from App.config, using defaults");
+                    return GetDefaultFieldMappings();
+                }
+
+                Log($"Successfully loaded {fieldMappings.Count} field mappings from App.config");
+                return fieldMappings;
+            }
+            catch (Exception ex)
+            {
+                Log($"Error parsing FIELD_MAPPINGS from App.config: {ex.Message}");
+                return GetDefaultFieldMappings();
             }
         }
 
@@ -320,16 +384,7 @@ namespace ConnectorSageBitrix.Config
             {
                 new FieldMapping
                 {
-                    BitrixFieldName = "UF_CRM_COMPANY_CATEGORIA",
-                    BitrixFieldType = "string",
-                    SageFieldName = "CodigoCategoriaCliente",
-                    SageFieldDescription = "Código de categoría del cliente",
-                    IsActive = true,
-                    IsMandatory = true
-                },
-                new FieldMapping
-                {
-                    BitrixFieldName = "UF_CRM_COMPANY_RAZON",
+                    BitrixFieldName = "TITLE",
                     BitrixFieldType = "string",
                     SageFieldName = "RazonSocial",
                     SageFieldDescription = "Razón social de la empresa",
@@ -338,7 +393,16 @@ namespace ConnectorSageBitrix.Config
                 },
                 new FieldMapping
                 {
-                    BitrixFieldName = "UF_CRM_COMPANY_DIVISA",
+                    BitrixFieldName = "INDUSTRY",
+                    BitrixFieldType = "string",
+                    SageFieldName = "CodigoCategoriaCliente_",
+                    SageFieldDescription = "Código de categoría del cliente",
+                    IsActive = true,
+                    IsMandatory = false
+                },
+                new FieldMapping
+                {
+                    BitrixFieldName = "CURRENCY_ID",
                     BitrixFieldType = "string",
                     SageFieldName = "CodigoDivisa",
                     SageFieldDescription = "Código de divisa",
@@ -347,7 +411,7 @@ namespace ConnectorSageBitrix.Config
                 },
                 new FieldMapping
                 {
-                    BitrixFieldName = "UF_CRM_COMPANY_DOMICILIO",
+                    BitrixFieldName = "ADDRESS",
                     BitrixFieldType = "string",
                     SageFieldName = "Domicilio",
                     SageFieldDescription = "Dirección principal",
@@ -356,19 +420,37 @@ namespace ConnectorSageBitrix.Config
                 },
                 new FieldMapping
                 {
-                    BitrixFieldName = "UF_CRM_COMPANY_TELEFONO",
+                    BitrixFieldName = "ADDRESS_CITY",
                     BitrixFieldType = "string",
-                    SageFieldName = "Telefono",
-                    SageFieldDescription = "Número de teléfono",
+                    SageFieldName = "Municipio",
+                    SageFieldDescription = "Ciudad/Municipio",
                     IsActive = true,
                     IsMandatory = false
                 },
                 new FieldMapping
                 {
-                    BitrixFieldName = "UF_CRM_COMPANY_EMAIL",
+                    BitrixFieldName = "ADDRESS_POSTAL_CODE",
                     BitrixFieldType = "string",
-                    SageFieldName = "EMail1",
-                    SageFieldDescription = "Correo electrónico principal",
+                    SageFieldName = "CodigoPostal",
+                    SageFieldDescription = "Código postal",
+                    IsActive = true,
+                    IsMandatory = false
+                },
+                new FieldMapping
+                {
+                    BitrixFieldName = "ADDRESS_REGION",
+                    BitrixFieldType = "string",
+                    SageFieldName = "Provincia",
+                    SageFieldDescription = "Provincia/Región",
+                    IsActive = true,
+                    IsMandatory = false
+                },
+                new FieldMapping
+                {
+                    BitrixFieldName = "ADDRESS_COUNTRY",
+                    BitrixFieldType = "string",
+                    SageFieldName = "Nacion",
+                    SageFieldDescription = "País",
                     IsActive = true,
                     IsMandatory = false
                 }
