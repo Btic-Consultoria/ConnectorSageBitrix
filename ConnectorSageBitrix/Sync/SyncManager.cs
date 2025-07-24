@@ -198,15 +198,34 @@ namespace ConnectorSageBitrix.Sync
 
         private async Task SyncSociosAsync(CancellationToken cancellationToken)
         {
-            _logger.Info("Starting socios synchronization");
+            _logger.Info("🚀 Starting socios synchronization");
 
             try
             {
+                // 🔥 Logging detallado antes de la llamada crítica
+                _logger.Info("📡 About to call Bitrix24 API: ListSociosAsync");
+
+                // Verificar conexión de red básica
+                if (_bitrixClient == null)
+                {
+                    throw new InvalidOperationException("BitrixClient is null - cannot proceed");
+                }
+
+                // 🔥 PUNTO CRÍTICO: Aquí es donde se colgaba antes
                 var bitrixSocios = await _bitrixClient.ListSociosAsync();
+
+                _logger.Info($"✅ Successfully retrieved {bitrixSocios?.Count ?? 0} socios from Bitrix24");
+
                 var sageSocios = _socioRepository.GetAll();
+                _logger.Info($"📊 Found {bitrixSocios?.Count ?? 0} socios in Bitrix24 and {sageSocios?.Count ?? 0} in Sage");
 
-                _logger.Info($"Found {bitrixSocios.Count} socios in Bitrix24 and {sageSocios.Count} in Sage");
+                if (sageSocios == null || !sageSocios.Any())
+                {
+                    _logger.Warning("⚠️ No socios found in Sage database");
+                    return;
+                }
 
+                int processed = 0;
                 foreach (var sageSocio in sageSocios)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -214,19 +233,35 @@ namespace ConnectorSageBitrix.Sync
                     try
                     {
                         await SyncSocio(sageSocio, cancellationToken);
+                        processed++;
+
+                        // Log progreso cada 10 registros
+                        if (processed % 10 == 0)
+                        {
+                            _logger.Info($"📈 Processed {processed}/{sageSocios.Count} socios");
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _logger.Error($"Error syncing socio {sageSocio.DNI}: {ex.Message}");
+                        _logger.Error($"❌ Error syncing socio {sageSocio.DNI}: {ex.Message}");
+                        // Continuar con el siguiente socio
                     }
                 }
 
-                _logger.Info("Socios synchronization completed");
+                _logger.Info($"✅ Socios synchronization completed - {processed}/{sageSocios.Count} processed");
+            }
+            catch (TaskCanceledException)
+            {
+                _logger.Warning("⏹️ Socios synchronization was cancelled");
+                throw;
             }
             catch (Exception ex)
             {
-                _logger.Error($"Error in socios synchronization: {ex.Message}");
-                throw;
+                _logger.Error($"❌ Critical error in socios synchronization: {ex.Message}");
+                _logger.Error($"Stack trace: {ex.StackTrace}");
+
+                // Re-throw para que el caller pueda manejar
+                throw new Exception($"Socios synchronization failed: {ex.Message}", ex);
             }
         }
 

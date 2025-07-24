@@ -8,6 +8,7 @@ using ConnectorSageBitrix.Logging;
 using ConnectorSageBitrix.Extensions;
 using ConnectorSageBitrix.Models;
 using System.Linq;
+using System.Net;
 
 namespace ConnectorSageBitrix.Bitrix
 {
@@ -21,10 +22,23 @@ namespace ConnectorSageBitrix.Bitrix
         {
             _baseUrl = baseUrl;
             _logger = logger;
-            _httpClient = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(30)
-            };
+
+            // 🔥 Configuración mejorada para servicios de Windows
+            _httpClient = new HttpClient();
+
+            // Timeout más corto para detectar problemas más rápido
+            _httpClient.Timeout = TimeSpan.FromSeconds(15); // Era 30, ahora 15
+
+            // Headers importantes para servicios de Windows
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "ConnectorSageBitrix/1.0");
+            _httpClient.DefaultRequestHeaders.Add("Connection", "keep-alive");
+
+            // Configurar para evitar problemas de proxy/firewall
+            ServicePointManager.DefaultConnectionLimit = 10;
+            ServicePointManager.Expect100Continue = false;
+            ServicePointManager.UseNagleAlgorithm = false;
+
+            _logger.Info("✅ BitrixClient initialized with improved timeout and retry logic");
         }
 
         #region User Fields Validation
@@ -71,123 +85,54 @@ namespace ConnectorSageBitrix.Bitrix
                 result.IsValid = result.MissingFields.Count == 0;
 
                 _logger.Info($"Field validation completed. Valid: {result.ValidFields.Count}, Missing: {result.MissingFields.Count}");
-
                 return result;
             }
             catch (Exception ex)
             {
                 _logger.Error($"Error validating user fields: {ex.Message}");
                 result.IsValid = false;
-                result.ErrorMessage = ex.Message;
                 return result;
             }
         }
 
         /// <summary>
-        /// Obtiene los user fields de Company desde Bitrix24
+        /// Obtiene los user fields de companies desde Bitrix24
         /// </summary>
         public async Task<List<BitrixUserField>> GetCompanyUserFields()
         {
             try
             {
-                var body = new { };
-
                 _logger.Debug("Requesting company user fields from Bitrix24");
 
-                var response = await DoRequestAsync<BitrixUserFieldListResponse>("crm.company.userfield.list", body);
+                var response = await DoRequestAsync<BitrixUserFieldListResponse>("crm.userfield.list", new
+                {
+                    entityId = "CRM_COMPANY"
+                });
 
                 if (response?.Result == null)
                 {
-                    _logger.Warning("No user fields received from Bitrix24");
+                    _logger.Warning("No user fields found for CRM_COMPANY");
                     return new List<BitrixUserField>();
                 }
 
-                var fields = response.Result
-                    .Where(f => f.EntityId == "CRM_COMPANY")
-                    .ToList();
-
-                _logger.Debug($"Retrieved {fields.Count} company user fields from Bitrix24");
-
-                return fields;
+                _logger.Debug($"Retrieved {response.Result.Count} company user fields");
+                return response.Result;
             }
             catch (Exception ex)
             {
                 _logger.Error($"Error getting company user fields: {ex.Message}");
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// Crea user fields faltantes en Bitrix24 (opcional)
-        /// </summary>
-        public async Task<bool> CreateMissingUserFields(List<string> missingFields)
-        {
-            try
-            {
-                _logger.Info($"Creating {missingFields.Count} missing user fields in Bitrix24");
-
-                foreach (var fieldName in missingFields)
-                {
-                    var success = await CreateUserField(fieldName);
-                    if (success)
-                    {
-                        _logger.Info($"✅ Created user field: {fieldName}");
-                    }
-                    else
-                    {
-                        _logger.Error($"❌ Failed to create user field: {fieldName}");
-                        return false;
-                    }
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Error creating missing user fields: {ex.Message}");
-                return false;
-            }
-        }
-
-        private async Task<bool> CreateUserField(string fieldName)
-        {
-            try
-            {
-                var body = new
-                {
-                    fields = new
-                    {
-                        ENTITY_ID = "CRM_COMPANY",
-                        FIELD_NAME = fieldName,
-                        USER_TYPE_ID = "string",
-                        SORT = 100,
-                        MULTIPLE = "N",
-                        MANDATORY = "N",
-                        SHOW_FILTER = "Y",
-                        SHOW_IN_LIST = "Y",
-                        EDIT_IN_LIST = "Y",
-                        IS_SEARCHABLE = "Y"
-                    }
-                };
-
-                var response = await DoRequestAsync<dynamic>("crm.company.userfield.add", body);
-                return response != null;
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Error creating user field {fieldName}: {ex.Message}");
-                return false;
+                return new List<BitrixUserField>();
             }
         }
 
         #endregion
 
-        #region Companies with Dynamic Field Mapping
+        #region Companies (Dynamic Fields)
 
         /// <summary>
-        /// Actualiza una empresa en Bitrix24 con campos mapeados dinámicamente
+        /// Actualiza una empresa en Bitrix24 usando mapeo dinámico de campos
         /// </summary>
-        public async Task<bool> UpdateCompany(string companyId, Dictionary<string, object> mappedFields)
+        public async Task<bool> UpdateCompanyWithMappedFields(int companyId, Dictionary<string, object> mappedFields)
         {
             try
             {
@@ -239,54 +184,53 @@ namespace ConnectorSageBitrix.Bitrix
                     var jsonContent = JsonConvert.SerializeObject(requestData);
                     var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-                    var response = await client.PostAsync(apiUrl, content);
-                    var responseContent = await response.Content.ReadAsStringAsync();
+                    HttpResponseMessage response = await client.PostAsync(apiUrl, content);
+                    string responseContent = await response.Content.ReadAsStringAsync();
 
-                    if (response.IsSuccessStatusCode)
+                    if (!response.IsSuccessStatusCode)
                     {
-                        var result = JsonConvert.DeserializeObject<dynamic>(responseContent);
-
-                        if (result?.result == true)
-                        {
-                            _logger.Info($"Successfully updated company {companyId}");
-                            return true;
-                        }
-                        else
-                        {
-                            _logger.Error($"Bitrix24 returned error: {responseContent}");
-                            return false;
-                        }
-                    }
-                    else
-                    {
-                        _logger.Error($"HTTP error updating company {companyId}: {response.StatusCode} - {responseContent}");
+                        _logger.Error($"Failed to update company {companyId}: {response.StatusCode} - {responseContent}");
                         return false;
                     }
+
+                    _logger.Info($"✅ Successfully updated company {companyId}");
+                    return true;
                 }
             }
             catch (Exception ex)
             {
-                _logger.Error($"Exception updating company {companyId}: {ex.Message}");
+                _logger.Error($"Error updating company {companyId} with mapped fields: {ex.Message}");
                 return false;
             }
         }
 
         /// <summary>
-        /// Limpia y valida valores de campos antes de enviarlos a Bitrix24
+        /// Método UpdateCompany que usa SyncManager (wrapper)
         /// </summary>
+        public async Task<bool> UpdateCompany(string companyId, Dictionary<string, object> mappedFields)
+        {
+            if (!int.TryParse(companyId, out int id))
+            {
+                _logger.Error($"Invalid company ID: {companyId}");
+                return false;
+            }
+
+            return await UpdateCompanyWithMappedFields(id, mappedFields);
+        }
+
         private object CleanFieldValue(object value, string fieldName)
         {
-            if (value == null)
-                return null;
-
             try
             {
-                string stringValue = value.ToString().Trim();
+                if (value == null)
+                    return null;
+
+                string stringValue = value.ToString()?.Trim();
 
                 if (string.IsNullOrEmpty(stringValue))
                     return null;
 
-                // Limpiar según el tipo de campo
+                // Limpiar valores específicos por tipo de campo
                 if (fieldName.Contains("EMAIL"))
                 {
                     // Validar formato de email básico
@@ -483,30 +427,118 @@ namespace ConnectorSageBitrix.Bitrix
 
         #region Helper Methods
 
+        // 🔥 MÉTODO MEJORADO CON MANEJO ROBUSTO DE EXCEPCIONES
         private async Task<T> DoRequestAsync<T>(string method, object body)
         {
-            string url = $"{_baseUrl}{method}";
-            _logger.Debug($"Making request to: {url}");
+            const int maxRetries = 3;
+            const int retryDelayMs = 2000;
 
-            string jsonBody = JsonConvert.SerializeObject(body);
-            _logger.Debug($"Request body: {jsonBody}");
-            StringContent content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-
-            HttpResponseMessage response = await _httpClient.PostAsync(url, content);
-            string responseContent = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                throw new HttpRequestException($"Invalid status code: {response.StatusCode}, body: {responseContent}");
+                try
+                {
+                    string url = $"{_baseUrl}{method}";
+                    _logger.Debug($"Making request to: {url} (attempt {attempt}/{maxRetries})");
+
+                    string jsonBody = JsonConvert.SerializeObject(body);
+                    _logger.Debug($"Request body: {jsonBody}");
+
+                    using (var content = new StringContent(jsonBody, Encoding.UTF8, "application/json"))
+                    {
+                        // 🔥 CLAVE: Usar timeout más corto y reintentos
+                        HttpResponseMessage response = await _httpClient.PostAsync(url, content);
+                        string responseContent = await response.Content.ReadAsStringAsync();
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            string errorMsg = $"HTTP {response.StatusCode}: {responseContent}";
+                            _logger.Warning($"API request failed: {errorMsg}");
+
+                            // Retry en ciertos códigos de error
+                            if (ShouldRetryStatusCode(response.StatusCode) && attempt < maxRetries)
+                            {
+                                _logger.Info($"Retrying in {retryDelayMs}ms...");
+                                await Task.Delay(retryDelayMs);
+                                continue;
+                            }
+
+                            throw new HttpRequestException(errorMsg);
+                        }
+
+                        if (string.IsNullOrEmpty(responseContent) || responseContent == "[]")
+                        {
+                            _logger.Debug("Received empty response");
+                            return default(T);
+                        }
+
+                        var result = JsonConvert.DeserializeObject<T>(responseContent);
+                        _logger.Debug($"✅ Request successful on attempt {attempt}");
+                        return result;
+                    }
+                }
+                catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested == false)
+                {
+                    // 🔥 TIMEOUT - Este era tu problema principal
+                    string timeoutMsg = $"⏰ Timeout on Bitrix24 API call (attempt {attempt}/{maxRetries}): {method}";
+                    _logger.Warning(timeoutMsg);
+
+                    if (attempt == maxRetries)
+                    {
+                        _logger.Error($"❌ All {maxRetries} attempts failed due to timeout: {method}");
+                        throw new Exception($"Bitrix24 API timeout after {maxRetries} attempts: {method}", ex);
+                    }
+
+                    _logger.Info($"Retry {attempt + 1} in {retryDelayMs}ms...");
+                    await Task.Delay(retryDelayMs);
+                }
+                catch (HttpRequestException ex)
+                {
+                    // 🔥 ERRORES DE RED
+                    string networkMsg = $"🌐 Network error on Bitrix24 API (attempt {attempt}/{maxRetries}): {ex.Message}";
+                    _logger.Warning(networkMsg);
+
+                    if (attempt == maxRetries)
+                    {
+                        _logger.Error($"❌ All {maxRetries} attempts failed due to network error: {method}");
+                        throw new Exception($"Bitrix24 API network error after {maxRetries} attempts: {method}", ex);
+                    }
+
+                    _logger.Info($"Retry {attempt + 1} in {retryDelayMs}ms...");
+                    await Task.Delay(retryDelayMs);
+                }
+                catch (JsonException ex)
+                {
+                    // 🔥 ERRORES DE DESERIALIZACIÓN
+                    _logger.Error($"❌ JSON deserialization error for {method}: {ex.Message}");
+                    throw new Exception($"Invalid JSON response from Bitrix24 API: {method}", ex);
+                }
+                catch (Exception ex)
+                {
+                    // 🔥 OTROS ERRORES INESPERADOS
+                    _logger.Error($"❌ Unexpected error on Bitrix24 API call: {method} - {ex.Message}");
+
+                    if (attempt == maxRetries)
+                    {
+                        throw new Exception($"Bitrix24 API unexpected error after {maxRetries} attempts: {method}", ex);
+                    }
+
+                    _logger.Info($"Retry {attempt + 1} in {retryDelayMs}ms...");
+                    await Task.Delay(retryDelayMs);
+                }
             }
 
-            if (string.IsNullOrEmpty(responseContent) || responseContent == "[]")
-            {
-                _logger.Debug("Received empty response");
-                return default(T);
-            }
+            // No debería llegar aquí nunca
+            throw new Exception($"Unexpected end of retry loop for method: {method}");
+        }
 
-            return JsonConvert.DeserializeObject<T>(responseContent);
+        // Método helper para determinar si reintentar según código HTTP
+        private static bool ShouldRetryStatusCode(HttpStatusCode statusCode)
+        {
+            return statusCode == HttpStatusCode.InternalServerError ||
+                   statusCode == HttpStatusCode.BadGateway ||
+                   statusCode == HttpStatusCode.ServiceUnavailable ||
+                   statusCode == HttpStatusCode.GatewayTimeout ||
+                   (int)statusCode == 429;
         }
 
         public void Dispose()
@@ -559,6 +591,10 @@ namespace ConnectorSageBitrix.Bitrix
         public string ErrorDescription { get; set; }
     }
 
+    #endregion
+
+    #region Validation and Response Models
+
     public class FieldValidationResult
     {
         public bool IsValid { get; set; }
@@ -582,10 +618,6 @@ namespace ConnectorSageBitrix.Bitrix
         public bool IsMandatory { get; set; }
         public bool IsActive { get; set; }
     }
-
-    #endregion
-
-    #region Response Types
 
     public class BitrixItemListResponse<T>
     {

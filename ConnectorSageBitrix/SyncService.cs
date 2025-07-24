@@ -13,6 +13,8 @@ using ConnectorSageBitrix.Repositories;
 using ConnectorSageBitrix.Models;
 using System.IO;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Http;
 using Timer = System.Timers.Timer;
 
 namespace ConnectorSageBitrix
@@ -100,7 +102,7 @@ namespace ConnectorSageBitrix
             StopService();
         }
 
-        public void StartService()
+        public async void StartService()
         {
             string diagFile = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -221,6 +223,16 @@ namespace ConnectorSageBitrix
                 BitrixClient bitrixClient = null;
                 if (_config.PackEmpresa)
                 {
+                    _logger.Info("🔍 Testing network connectivity before initializing Bitrix client");
+                    bool networkOk = await TestNetworkConnectivity().ConfigureAwait(false);
+
+                    if (!networkOk)
+                    {
+                        _logger.Error("❌ Network connectivity test failed - service may have issues");
+                        // Continuar anyway, pero con warning
+                    }
+
+                    // Ahora sí crear el BitrixClient
                     bitrixClient = new BitrixClient(_config.Bitrix.URL, _logger);
                     _logger.Info("Bitrix client initialized");
                 }
@@ -258,25 +270,64 @@ namespace ConnectorSageBitrix
                 _logger.Info("Application is now running");
                 File.AppendAllText(diagFile, $"{DateTime.Now}: Aplicación iniciada correctamente\r\n");
 
-                // Run initial sync with a small delay
-                Task.Run(async () =>
+                // Run initial sync WITHOUT delay (direct execution)
+                _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await Task.Delay(5000);
+                        _logger.Info("🚀 Starting initial sync task (NO DELAY)");
+                        File.AppendAllText(diagFile, $"{DateTime.Now}: 🚀 Iniciando sincronización SIN delay\r\n");
+
                         if (_isRunning && _config.PackEmpresa)
                         {
-                            File.AppendAllText(diagFile, $"{DateTime.Now}: Iniciando sincronización inicial\r\n");
-                            await RunSyncAsync();
-                            File.AppendAllText(diagFile, $"{DateTime.Now}: Sincronización inicial completada\r\n");
+                            _logger.Info("📞 Calling RunSyncAsync immediately");
+                            File.AppendAllText(diagFile, $"{DateTime.Now}: 📞 Llamando RunSyncAsync inmediatamente\r\n");
+
+                            try
+                            {
+                                // 🔥 DIRECTO A LA SINCRONIZACIÓN - SIN DELAY
+                                await RunSyncAsync().ConfigureAwait(false);
+
+                                _logger.Info("✅ RunSyncAsync completed successfully!");
+                                File.AppendAllText(diagFile, $"{DateTime.Now}: ✅ RunSyncAsync completado exitosamente\r\n");
+                            }
+                            catch (Exception runSyncEx)
+                            {
+                                string errorDetails = $"💥 ERROR in RunSyncAsync: {runSyncEx.Message}\n" +
+                                                     $"Type: {runSyncEx.GetType().Name}\n" +
+                                                     $"StackTrace: {runSyncEx.StackTrace}\n";
+
+                                if (runSyncEx.InnerException != null)
+                                {
+                                    errorDetails += $"Inner: {runSyncEx.InnerException.Message}\n";
+                                }
+
+                                _logger.Error(errorDetails);
+                                File.AppendAllText(diagFile, $"{DateTime.Now}: 💥 ERROR: {errorDetails}\r\n");
+
+                                // NO re-throw - mantener programa vivo
+                            }
+                        }
+                        else
+                        {
+                            _logger.Warning($"⚠️ Sync conditions not met - IsRunning: {_isRunning}, PackEmpresa: {_config?.PackEmpresa}");
+                            File.AppendAllText(diagFile, $"{DateTime.Now}: ⚠️ Condiciones no cumplidas\r\n");
                         }
                     }
-                    catch (Exception syncEx)
+                    catch (Exception outerEx)
                     {
+                        string outerError = $"💥 OUTER EXCEPTION: {outerEx.Message}\n" +
+                                           $"Type: {outerEx.GetType().Name}\n" +
+                                           $"StackTrace: {outerEx.StackTrace}\n";
+
                         if (_logger != null)
-                            _logger.Error($"Initial sync error: {syncEx.Message}");
-                        File.AppendAllText(diagFile, $"{DateTime.Now}: ERROR en sincronización inicial: {syncEx.Message}\r\n");
+                            _logger.Error(outerError);
+
+                        File.AppendAllText(diagFile, $"{DateTime.Now}: 💥 EXCEPCIÓN EXTERNA: {outerError}\r\n");
                     }
+
+                    _logger.Info("🏁 Initial sync task completed - program should continue running");
+                    File.AppendAllText(diagFile, $"{DateTime.Now}: 🏁 Tarea inicial completada - programa debe seguir corriendo\r\n");
                 });
             }
             catch (Exception ex)
@@ -356,5 +407,93 @@ namespace ConnectorSageBitrix
                 _logger.Error(ex.ToString());
             }
         }
+        private async Task<bool> TestNetworkConnectivity()
+        {
+            string diagFile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "ConnectorSageBitrix", "network-diag.log");
+
+            try
+            {
+                _logger.Info("🔍 Testing network connectivity for Bitrix24");
+                File.AppendAllText(diagFile, $"{DateTime.Now}: Iniciando pruebas de conectividad\r\n");
+
+                // 1. Test básico de DNS
+                try
+                {
+                    var bitrixHost = new Uri(_config.Bitrix.URL).Host;
+                    var addresses = await Dns.GetHostAddressesAsync(bitrixHost);
+                    _logger.Info($"✅ DNS resolution OK: {bitrixHost} -> {addresses.Length} addresses");
+                    File.AppendAllText(diagFile, $"{DateTime.Now}: DNS OK - {bitrixHost}\r\n");
+                }
+                catch (Exception dnsEx)
+                {
+                    _logger.Error($"❌ DNS resolution failed: {dnsEx.Message}");
+                    File.AppendAllText(diagFile, $"{DateTime.Now}: DNS FAIL - {dnsEx.Message}\r\n");
+                    return false;
+                }
+
+                // 2. Test HTTP básico con timeout corto
+                try
+                {
+                    using (var testClient = new HttpClient())
+                    {
+                        testClient.Timeout = TimeSpan.FromSeconds(10);
+                        testClient.DefaultRequestHeaders.Add("User-Agent", "ConnectorSageBitrix-Diagnostic/1.0");
+
+                        var response = await testClient.GetAsync(_config.Bitrix.URL);
+                        _logger.Info($"✅ HTTP connectivity OK: {response.StatusCode}");
+                        File.AppendAllText(diagFile, $"{DateTime.Now}: HTTP OK - {response.StatusCode}\r\n");
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    _logger.Error("❌ HTTP test timeout - network may be slow or blocked");
+                    File.AppendAllText(diagFile, $"{DateTime.Now}: HTTP TIMEOUT\r\n");
+                    return false;
+                }
+                catch (Exception httpEx)
+                {
+                    _logger.Error($"❌ HTTP test failed: {httpEx.Message}");
+                    File.AppendAllText(diagFile, $"{DateTime.Now}: HTTP FAIL - {httpEx.Message}\r\n");
+                    return false;
+                }
+
+                // 3. Test de proxy/firewall
+                try
+                {
+                    var proxy = WebRequest.GetSystemWebProxy();
+                    var bitrixUri = new Uri(_config.Bitrix.URL);
+                    var proxyUri = proxy.GetProxy(bitrixUri);
+
+                    if (proxyUri != bitrixUri)
+                    {
+                        _logger.Info($"🔄 System proxy detected: {proxyUri}");
+                        File.AppendAllText(diagFile, $"{DateTime.Now}: PROXY DETECTED - {proxyUri}\r\n");
+                    }
+                    else
+                    {
+                        _logger.Info("✅ No proxy detected - direct connection");
+                        File.AppendAllText(diagFile, $"{DateTime.Now}: NO PROXY - direct connection\r\n");
+                    }
+                }
+                catch (Exception proxyEx)
+                {
+                    _logger.Warning($"⚠️ Proxy detection failed: {proxyEx.Message}");
+                    File.AppendAllText(diagFile, $"{DateTime.Now}: PROXY CHECK FAIL - {proxyEx.Message}\r\n");
+                }
+
+                _logger.Info("✅ Network connectivity tests completed successfully");
+                File.AppendAllText(diagFile, $"{DateTime.Now}: Tests completed - connectivity OK\r\n");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"❌ Network diagnostics failed: {ex.Message}");
+                File.AppendAllText(diagFile, $"{DateTime.Now}: CRITICAL ERROR - {ex.Message}\r\n");
+                return false;
+            }
+        }
+
     }
 }
