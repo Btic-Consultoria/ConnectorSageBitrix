@@ -24,7 +24,7 @@ namespace ConnectorSageBitrix.Mapping
         }
 
         /// <summary>
-        /// Valida qué campos del mapping están realmente disponibles en la BD
+        /// Valida que campos del mapping están realmente disponibles en la BD
         /// </summary>
         public MappingValidationResult ValidateFieldMappings()
         {
